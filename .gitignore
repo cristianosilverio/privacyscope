@@ -1,0 +1,71 @@
+@'
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.eggs/
+*.egg-info/
+*.egg
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb_meta
+
+# Dados — ignora TUDO em data/, preserva só .gitkeep
+data/raw/*
+!data/raw/.gitkeep
+data/manifests/*
+!data/manifests/.gitkeep
+data/results/*
+!data/results/.gitkeep
+
+# Bancos e dados binários (em qualquer lugar do repo)
+*.sqlite
+*.sqlite3
+*.db
+*.parquet
+
+# Credenciais — variantes JSON e outros formatos
+credentials*.json
+*credentials*.json
+secret*.json
+service-account*.json
+client_secret*.json
+*.cred
+*.pfx
+*.p12
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+playwright/.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Credenciais / segredos
+.env
+*.pem
+*.key
+'@ | Set-Content .gitignore -Encoding utf8
+
+# Confere
+type .gitignore

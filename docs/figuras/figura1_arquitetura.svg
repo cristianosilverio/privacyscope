@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 820" font-family="Arial, Helvetica, sans-serif">
+  <title>Arquitetura em blocos do framework PrivacyScope</title>
+  <desc>Diagrama em camadas: Protocolo, Orquestrador, Ingestão, Coleta, Evidência Bruta, Análise/Testes, Resultados Estruturados, Saída. Camadas conectadas por interfaces abstratas com plugins intercambiáveis.</desc>
+
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3f3f46"/>
+    </marker>
+    <marker id="arrD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#71717a"/>
+    </marker>
+    <style>
+      .layer        { fill: #ffffff; stroke: #3f3f46; stroke-width: 1.4; }
+      .layer-alt    { fill: #f4f4f5; stroke: #3f3f46; stroke-width: 1.4; }
+      .cross        { fill: #e4e4e7; stroke: #52525b; stroke-width: 1.4; stroke-dasharray: 4 3; }
+      .plug         { fill: #fafafa; stroke: #a1a1aa; stroke-width: 1; }
+      .plug-dashed  { fill: #fafafa; stroke: #a1a1aa; stroke-width: 1; stroke-dasharray: 4 3; }
+      .badge        { fill: #ececef; stroke: #71717a; stroke-width: 1; }
+      .sep          { stroke: #d4d4d8; stroke-width: 1; }
+      .arr-solid    { stroke: #3f3f46; stroke-width: 1.6; fill: none; }
+      .arr-dashed   { stroke: #71717a; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; }
+      .t-doc-title  { font-size: 15px; font-weight: 700; fill: #18181b; }
+      .t-title      { font-size: 13px; font-weight: 700; fill: #18181b; }
+      .t-subt       { font-size: 10.5px; fill: #3f3f46; }
+      .t-plug-name  { font-size: 10.5px; font-weight: 700; fill: #18181b; }
+      .t-plug-d     { font-size: 9.5px; fill: #3f3f46; }
+      .t-iface      { font-size: 10px; fill: #71717a; font-style: italic; }
+      .t-key        { font-size: 10.5px; font-weight: 700; fill: #18181b; }
+      .t-val        { font-size: 9.5px; fill: #18181b; font-family: 'Courier New', monospace; }
+      .t-badge      { font-size: 10px; fill: #18181b; font-weight: 700; }
+    </style>
+  </defs>
+
+  <!-- Document title -->
+  <text x="510" y="22" text-anchor="middle" class="t-doc-title">Framework PrivacyScope — arquitetura em camadas</text>
+  <text x="510" y="40" text-anchor="middle" class="t-subt">Cada camada expõe uma interface abstrata; plugins são intercambiáveis via protocolo declarativo</text>
+
+  <!-- ===================== PROTOCOLO (lateral esquerda) ===================== -->
+  <rect x="20" y="60" width="220" height="740" rx="8" class="cross"/>
+  <text x="130" y="80" text-anchor="middle" class="t-title">Protocolo (config.yaml)</text>
+  <text x="130" y="96" text-anchor="middle" class="t-subt">declarativo · versionado</text>
+  <line x1="36" y1="104" x2="224" y2="104" class="sep"/>
+
+  <rect x="36" y="114" width="188" height="58" rx="4" class="plug"/>
+  <text x="44" y="130" class="t-key">sources:</text>
+  <text x="44" y="143" class="t-val">  - tranco@2026-05</text>
+  <text x="44" y="155" class="t-val">  - govbr_oficial</text>
+  <text x="44" y="167" class="t-val">amostragem: estratificada</text>
+
+  <rect x="36" y="180" width="188" height="68" rx="4" class="plug"/>
+  <text x="44" y="196" class="t-key">crawlers:</text>
+  <text x="44" y="209" class="t-val">  - http_simples</text>
+  <text x="44" y="221" class="t-val">  - playwright</text>
+  <text x="44" y="233" class="t-val">timeout: 60s</text>
+  <text x="44" y="245" class="t-val">paralelismo: 8</text>
+
+  <rect x="36" y="256" width="188" height="116" rx="4" class="plug"/>
+  <text x="44" y="272" class="t-key">testes (variáveis):</text>
+  <text x="44" y="285" class="t-val">  - banner_cookies</text>
+  <text x="44" y="297" class="t-val">  - politica_privacidade</text>
+  <text x="44" y="309" class="t-val">  - canal_titular</text>
+  <text x="44" y="321" class="t-val">  - cookies_set_count</text>
+  <text x="44" y="333" class="t-val">  - categoria_cookies (ML)</text>
+  <text x="44" y="345" class="t-val">  - menciona_lgpd (ML)</text>
+  <text x="44" y="358" class="t-val">critérios:</text>
+  <text x="44" y="368" class="t-val">  thresholds.yaml</text>
+
+  <rect x="36" y="380" width="188" height="68" rx="4" class="plug"/>
+  <text x="44" y="396" class="t-key">outputs:</text>
+  <text x="44" y="409" class="t-val">  - parquet</text>
+  <text x="44" y="421" class="t-val">  - csv</text>
+  <text x="44" y="433" class="t-val">  - markdown_report</text>
+  <text x="44" y="445" class="t-val">  - dashboard_json</text>
+
+  <rect x="36" y="456" width="188" height="44" rx="4" class="badge"/>
+  <text x="130" y="473" text-anchor="middle" class="t-badge">protocol_version: v1.0.0</text>
+  <text x="130" y="489" text-anchor="middle" class="t-plug-d">hash SHA-256 — auditável</text>
+
+  <rect x="36" y="508" width="188" height="96" rx="4" class="plug"/>
+  <text x="44" y="524" class="t-key">Auditoria / logs</text>
+  <text x="44" y="540" class="t-val">  audit_log.jsonl</text>
+  <text x="44" y="552" class="t-val">  manifest.jsonl</text>
+  <text x="44" y="564" class="t-val">  métricas_execução</text>
+  <text x="44" y="576" class="t-val">  W3C-PROV trace</text>
+  <text x="44" y="588" class="t-val">  run_id + timestamp</text>
+
+  <rect x="36" y="612" width="188" height="178" rx="4" class="badge"/>
+  <text x="130" y="630" text-anchor="middle" class="t-badge">Cadeia de custódia</text>
+  <text x="44" y="648" class="t-plug-d">Cada site analisado →</text>
+  <text x="44" y="660" class="t-plug-d">pacote de evidências:</text>
+  <text x="44" y="676" class="t-val">  tar.gz {</text>
+  <text x="44" y="688" class="t-val">    html, cookies,</text>
+  <text x="44" y="700" class="t-val">    headers, screenshot,</text>
+  <text x="44" y="712" class="t-val">    meta</text>
+  <text x="44" y="724" class="t-val">  }</text>
+  <text x="44" y="740" class="t-val">  + SHA-256</text>
+  <text x="44" y="752" class="t-val">  + manifest assinado</text>
+  <text x="44" y="772" class="t-plug-d">ABNT NBR ISO/IEC</text>
+  <text x="44" y="784" class="t-plug-d">27037:2013; Casey 2011</text>
+
+  <!-- ===================== ORQUESTRADOR ===================== -->
+  <rect x="260" y="60" width="220" height="60" rx="8" class="layer-alt"/>
+  <text x="370" y="83" text-anchor="middle" class="t-title">Orquestrador</text>
+  <text x="370" y="100" text-anchor="middle" class="t-subt">DAG · resolve plugins · paraleliza</text>
+
+  <path class="arr-dashed" d="M240,90 L260,90" marker-end="url(#arrD)"/>
+  <text x="250" y="84" text-anchor="middle" class="t-iface">lê</text>
+
+  <path class="arr-solid" d="M620,120 L620,140" marker-end="url(#arr)"/>
+
+  <!-- ===================== CAMADA 1: INGESTÃO ===================== -->
+  <rect x="260" y="140" width="740" height="84" rx="8" class="layer"/>
+  <text x="276" y="160" class="t-title">1 · Ingestão</text>
+  <text x="276" y="176" class="t-subt">interface SampleSource → Iterator[Domain]</text>
+  <line x1="260" y1="184" x2="1000" y2="184" class="sep"/>
+
+  <rect x="276" y="192" width="165" height="28" rx="4" class="plug"/>
+  <text x="358" y="207" text-anchor="middle" class="t-plug-name">TrancoSource</text>
+  <text x="358" y="217" text-anchor="middle" class="t-plug-d">.br filtrado · versionado</text>
+
+  <rect x="457" y="192" width="165" height="28" rx="4" class="plug"/>
+  <text x="539" y="207" text-anchor="middle" class="t-plug-name">GovBrSource</text>
+  <text x="539" y="217" text-anchor="middle" class="t-plug-d">portal oficial · .gov.br</text>
+
+  <rect x="638" y="192" width="165" height="28" rx="4" class="plug"/>
+  <text x="720" y="207" text-anchor="middle" class="t-plug-name">CsvSource</text>
+  <text x="720" y="217" text-anchor="middle" class="t-plug-d">lista manual · piloto</text>
+
+  <rect x="819" y="192" width="165" height="28" rx="4" class="plug-dashed"/>
+  <text x="901" y="207" text-anchor="middle" class="t-plug-name">&lt;novo plugin&gt;</text>
+  <text x="901" y="217" text-anchor="middle" class="t-plug-d">ex.: WHOIS · CNPJ</text>
+
+  <text x="620" y="240" text-anchor="middle" class="t-iface">[Domain]</text>
+  <path class="arr-solid" d="M620,244 L620,260" marker-end="url(#arr)"/>
+
+  <!-- ===================== CAMADA 2: COLETA ===================== -->
+  <rect x="260" y="262" width="740" height="100" rx="8" class="layer"/>
+  <text x="276" y="282" class="t-title">2 · Coleta</text>
+  <text x="276" y="298" class="t-subt">interface PageFetcher → RawEvidence (HTML · cookies · headers · screenshot)</text>
+  <line x1="260" y1="306" x2="1000" y2="306" class="sep"/>
+
+  <rect x="276" y="314" width="165" height="44" rx="4" class="plug"/>
+  <text x="358" y="330" text-anchor="middle" class="t-plug-name">HttpFetcher</text>
+  <text x="358" y="343" text-anchor="middle" class="t-plug-d">requests +</text>
+  <text x="358" y="354" text-anchor="middle" class="t-plug-d">BeautifulSoup</text>
+
+  <rect x="457" y="314" width="165" height="44" rx="4" class="plug"/>
+  <text x="539" y="330" text-anchor="middle" class="t-plug-name">PlaywrightFetcher</text>
+  <text x="539" y="343" text-anchor="middle" class="t-plug-d">JS render +</text>
+  <text x="539" y="354" text-anchor="middle" class="t-plug-d">cookies dinâmicos</text>
+
+  <rect x="638" y="314" width="165" height="44" rx="4" class="plug"/>
+  <text x="720" y="330" text-anchor="middle" class="t-plug-name">FallbackChain</text>
+  <text x="720" y="343" text-anchor="middle" class="t-plug-d">http → playwright</text>
+  <text x="720" y="354" text-anchor="middle" class="t-plug-d">retry · backoff</text>
+
+  <rect x="819" y="314" width="165" height="44" rx="4" class="plug-dashed"/>
+  <text x="901" y="330" text-anchor="middle" class="t-plug-name">&lt;novo plugin&gt;</text>
+  <text x="901" y="343" text-anchor="middle" class="t-plug-d">ex.: API · RSS</text>
+  <text x="901" y="354" text-anchor="middle" class="t-plug-d">arquivo local</text>
+
+  <text x="620" y="378" text-anchor="middle" class="t-iface">[RawEvidence]</text>
+  <path class="arr-solid" d="M620,382 L620,398" marker-end="url(#arr)"/>
+
+  <!-- ===================== CAMADA 3: EVIDÊNCIA BRUTA ===================== -->
+  <rect x="260" y="400" width="740" height="76" rx="8" class="layer-alt"/>
+  <text x="276" y="420" class="t-title">3 · Evidência Bruta (Raw Storage)</text>
+  <text x="276" y="436" class="t-subt">interface RawRepository · append-only · empacotamento tar.gz + SHA-256 + manifest</text>
+  <line x1="260" y1="444" x2="1000" y2="444" class="sep"/>
+
+  <rect x="276" y="452" width="225" height="20" rx="4" class="plug"/>
+  <text x="388" y="466" text-anchor="middle" class="t-plug-name">FileSystemRepository</text>
+
+  <rect x="510" y="452" width="200" height="20" rx="4" class="plug"/>
+  <text x="610" y="466" text-anchor="middle" class="t-plug-name">manifest.jsonl (assinado)</text>
+
+  <rect x="719" y="452" width="160" height="20" rx="4" class="plug"/>
+  <text x="799" y="466" text-anchor="middle" class="t-plug-name">SQLite (metadados)</text>
+
+  <rect x="888" y="452" width="96" height="20" rx="4" class="plug-dashed"/>
+  <text x="936" y="466" text-anchor="middle" class="t-plug-name">&lt;S3 / blob&gt;</text>
+
+  <text x="620" y="492" text-anchor="middle" class="t-iface">[EvidenceRef]</text>
+  <path class="arr-solid" d="M620,496 L620,512" marker-end="url(#arr)"/>
+
+  <!-- ===================== CAMADA 4: ANÁLISE / TESTES ===================== -->
+  <rect x="260" y="514" width="740" height="106" rx="8" class="layer"/>
+  <text x="276" y="534" class="t-title">4 · Análise / Testes</text>
+  <text x="276" y="550" class="t-subt">interface VariableTest → VariableResult(value · confidence · audit_trail)</text>
+  <line x1="260" y1="558" x2="1000" y2="558" class="sep"/>
+
+  <rect x="276" y="568" width="138" height="44" rx="4" class="plug"/>
+  <text x="345" y="585" text-anchor="middle" class="t-plug-name">StructuralTest</text>
+  <text x="345" y="597" text-anchor="middle" class="t-plug-d">CSS · DOM</text>
+  <text x="345" y="608" text-anchor="middle" class="t-plug-d">regex</text>
+
+  <rect x="421" y="568" width="138" height="44" rx="4" class="plug"/>
+  <text x="490" y="585" text-anchor="middle" class="t-plug-name">LexiconTest</text>
+  <text x="490" y="597" text-anchor="middle" class="t-plug-d">termos · padrões</text>
+  <text x="490" y="608" text-anchor="middle" class="t-plug-d">léxico-semânticos</text>
+
+  <rect x="566" y="568" width="138" height="44" rx="4" class="plug"/>
+  <text x="635" y="585" text-anchor="middle" class="t-plug-name">MLClassifierTest</text>
+  <text x="635" y="597" text-anchor="middle" class="t-plug-d">TF-IDF + LogReg</text>
+  <text x="635" y="608" text-anchor="middle" class="t-plug-d">(opc.: BERTimbau)</text>
+
+  <rect x="711" y="568" width="138" height="44" rx="4" class="plug"/>
+  <text x="780" y="585" text-anchor="middle" class="t-plug-name">CookieAnalyzer</text>
+  <text x="780" y="597" text-anchor="middle" class="t-plug-d">duração · escopo</text>
+  <text x="780" y="608" text-anchor="middle" class="t-plug-d">primário/terceiros</text>
+
+  <rect x="856" y="568" width="138" height="44" rx="4" class="plug-dashed"/>
+  <text x="925" y="585" text-anchor="middle" class="t-plug-name">&lt;novo plugin&gt;</text>
+  <text x="925" y="597" text-anchor="middle" class="t-plug-d">ex.: NER de</text>
+  <text x="925" y="608" text-anchor="middle" class="t-plug-d">dados pessoais</text>
+
+
+  <text x="620" y="636" text-anchor="middle" class="t-iface">[VariableResult]</text>
+  <path class="arr-solid" d="M620,640 L620,656" marker-end="url(#arr)"/>
+
+  <rect x="260" y="658" width="740" height="56" rx="8" class="layer-alt"/>
+  <text x="276" y="678" class="t-title">5 · Resultados Estruturados</text>
+  <text x="276" y="694" class="t-subt">interface ResultStore · tabela em formato longo (long-format)</text>
+  <line x1="260" y1="702" x2="1000" y2="702" class="sep"/>
+
+  <text x="630" y="711" text-anchor="middle" class="t-plug-d">SQLite/Parquet — schema: (domain_id, variable, value, confidence, audit_trail, run_id, protocol_version, ts)</text>
+
+  <text x="620" y="730" text-anchor="middle" class="t-iface">[ResultSet]</text>
+  <path class="arr-solid" d="M620,734 L620,750" marker-end="url(#arr)"/>
+
+  <rect x="260" y="752" width="740" height="60" rx="8" class="layer"/>
+  <text x="276" y="772" class="t-title">6 · Saída (Documentação)</text>
+  <line x1="260" y1="780" x2="1000" y2="780" class="sep"/>
+
+  <rect x="276" y="786" width="138" height="22" rx="4" class="plug"/>
+  <text x="345" y="800" text-anchor="middle" class="t-plug-name">CsvExport</text>
+
+  <rect x="421" y="786" width="138" height="22" rx="4" class="plug"/>
+  <text x="490" y="800" text-anchor="middle" class="t-plug-name">ParquetExport</text>
+
+  <rect x="566" y="786" width="138" height="22" rx="4" class="plug"/>
+  <text x="635" y="800" text-anchor="middle" class="t-plug-name">MarkdownReport</text>
+
+  <rect x="711" y="786" width="138" height="22" rx="4" class="plug"/>
+  <text x="780" y="800" text-anchor="middle" class="t-plug-name">DashboardJSON</text>
+
+  <rect x="856" y="786" width="138" height="22" rx="4" class="plug-dashed"/>
+  <text x="925" y="800" text-anchor="middle" class="t-plug-name">&lt;render plugin&gt;</text>
+</svg>
+</svg>

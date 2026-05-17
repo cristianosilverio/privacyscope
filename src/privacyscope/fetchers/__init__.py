@@ -1,0 +1,1 @@
+"""Plugins de Coleta (PageFetcher)."""

@@ -1,0 +1,101 @@
+# PrivacyScope — Protocolo de execução
+# Versão: v1.0.0
+# Hash deste arquivo é computado pelo orquestrador e gravado em audit_log.jsonl
+
+protocol_version: v1.0.0
+description: >
+  Protocolo inicial — amostra piloto estratificada (n=50) sobre TLD .br.
+  Variáveis: 4 determinísticas + 2 com classificação supervisionada.
+
+# ----------------------------------------------------------------
+# 1) Ingestão — quais fontes amostrais ativar e como amostrar
+# ----------------------------------------------------------------
+sources:
+  - name: tranco
+    version: "2026-05-01"
+    params:
+      tld_filter: ".br"
+      max_rank: 1000000
+      # nota: a Tranco filtrada por .br já contém quantidade suficiente de domínios
+      # .gov.br para o estrato governamental, dispensando fonte complementar.
+
+sampling:
+  strategy: stratified_random
+  seed: 20260517
+  strata:
+    governamental:
+      filter: { domain_pattern: ".gov.br" }
+      n: 25
+    empresarial:
+      filter: { domain_pattern_exclude: ".gov.br" }
+      n: 25
+
+# ----------------------------------------------------------------
+# 2) Coleta — quais fetchers usar e como falhar com elegância
+# ----------------------------------------------------------------
+crawlers:
+  - name: fallback_chain
+    chain: [http_simples, playwright]
+    timeout_s: 60
+    retries: 2
+    backoff: exponential
+    user_agent: "PrivacyScope/0.1.0 (research; +https://github.com/cristianosilverio/privacyscope)"
+
+# ----------------------------------------------------------------
+# 3) Evidência Bruta — empacotamento e cadeia de custódia
+# ----------------------------------------------------------------
+raw_storage:
+  type: filesystem
+  base_dir: data/raw
+  package_format: tar.gz
+  hash_algorithm: sha256
+  include_screenshot: true
+  manifest_file: data/manifests/manifest.jsonl
+
+# ----------------------------------------------------------------
+# 4) Análise — variáveis e regras
+# ----------------------------------------------------------------
+tests:
+  - name: banner_cookies
+    type: structural_lexicon
+    rules_file: config/rules/banner_cookies.yaml
+  - name: politica_privacidade
+    type: structural
+    rules_file: config/rules/politica_privacidade.yaml
+  - name: canal_titular
+    type: lexicon
+    rules_file: config/rules/canal_titular.yaml
+  - name: cookies_set_count
+    type: cookie_count
+  - name: categoria_cookies
+    type: cookie_classifier
+    rules_file: config/rules/categoria_cookies.yaml
+    ml_fallback: true
+  - name: menciona_lgpd
+    type: ml_text_classifier
+    model: tfidf_logreg
+    training_data: data/training/menciona_lgpd.csv
+
+# ----------------------------------------------------------------
+# 5) Resultados — onde persistir e como
+# ----------------------------------------------------------------
+result_store:
+  type: sqlite
+  path: data/results/results.sqlite
+
+# ----------------------------------------------------------------
+# 6) Saída — quais relatórios gerar
+# ----------------------------------------------------------------
+outputs:
+  - parquet: { path: data/results/results.parquet }
+  - csv: { path: data/results/results.csv }
+  - markdown_report: { path: data/results/report.md }
+  - dashboard_json: { path: data/results/dashboard.json }
+
+# ----------------------------------------------------------------
+# Auditoria
+# ----------------------------------------------------------------
+audit:
+  log_file: data/results/audit_log.jsonl
+  capture_protocol_hash: true
+  capture_plugin_versions: true
