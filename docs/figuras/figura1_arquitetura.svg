@@ -60,7 +60,7 @@
   <text x="44" y="285" class="t-val">  - banner_cookies</text>
   <text x="44" y="297" class="t-val">  - politica_privacidade</text>
   <text x="44" y="309" class="t-val">  - canal_titular</text>
-  <text x="44" y="321" class="t-val">  - cookies_set_count</text>
+  <text x="44" y="321" class="t-val">  - cookies_set</text>
   <text x="44" y="333" class="t-val">  - categoria_cookies (ML)</text>
   <text x="44" y="345" class="t-val">  - menciona_lgpd (ML)</text>
   <text x="44" y="358" class="t-val">critérios:</text>
@@ -247,5 +247,4 @@
 
   <rect x="856" y="786" width="138" height="22" rx="4" class="plug-dashed"/>
   <text x="925" y="800" text-anchor="middle" class="t-plug-name">&lt;render plugin&gt;</text>
-</svg>
 </svg>

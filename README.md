@@ -50,7 +50,7 @@ Cada execução gera:
 | `tem_banner_cookies` | binária | seletor CSS + léxico |
 | `tem_politica_privacidade` | binária | regex no DOM e em hrefs |
 | `tem_canal_titular` | binária | regex DPO/encarregado |
-| `cookies_set_count` | contagem | Playwright headless |
+| `cookies_set` | composta | Playwright headless, fases pré/pós-consent, inventário estruturado |
 | `categoria_cookies` | categórica | regras + classificador supervisionado |
 | `menciona_lgpd` | binária | TF-IDF + Regressão Logística |
 

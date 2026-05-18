@@ -65,8 +65,12 @@ tests:
   - name: canal_titular
     type: lexicon
     rules_file: config/rules/canal_titular.yaml
-  - name: cookies_set_count
-    type: cookie_count
+  - name: cookies_set
+    type: cookie_inventory
+    # Coleta em fases (pré-consent, pós-consent) pelo PlaywrightFetcher.
+    # value: contagem total por fase; audit_trail: inventário estruturado
+    # com nome, domínio, expires, flags. Valor truncado/hashed por privacidade.
+    mask_value: true
   - name: categoria_cookies
     type: cookie_classifier
     rules_file: config/rules/categoria_cookies.yaml

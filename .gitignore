@@ -69,3 +69,6 @@ Thumbs.db
 
 # Confere
 type .gitignore
+# Resultados de scripts de smoke test (gerados por execução manual)
+data/smoke_*/
+data/tranco_*/
