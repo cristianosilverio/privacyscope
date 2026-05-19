@@ -253,3 +253,35 @@ dict[str, list[dict]]` na `RawEvidence`. Convenção de chaves:
 **Achado:** UOL retornou `banner_cookies` com `matched_via=vendor` e `vendor=OneTrust`. Primeiro caso real de detecção de CMP comercial pelo framework.
 
 **Para o TCC:** evidência direta de que sites comerciais brasileiros de grande tráfego (UOL é top-10 do mercado nacional) usam ConsentManager Platforms estabelecidos. Suporta argumento de que o framework precisa reconhecer signatures de CMPs (não apenas léxico genérico) para evitar falso negativo em sites que não exibem texto léxico no HTML estático (CMPs renderizam texto via i18n após carga JS).
+
+---
+
+## 13. Smoke C3 — 15 resultados em 5 sites baseline (19/05/2026)
+
+**Distribuição:**
+
+| Variável | True | False |
+|---|---|---|
+| `tem_banner_cookies` | 5/5 | 0/5 |
+| `tem_politica_privacidade` | 3/5 | 2/5 (uol, mercadolivre) |
+| `tem_canal_titular` | 1/5 (só anpd) | 4/5 |
+
+**Achado 1 — mercadolivre.com.br com política=False apesar de URL `/privacidade` acessada.**
+
+O log do HttpFetcher mostra GET HTTP/1.1 200 em `https://www.mercadolivre.com.br/privacidade#tech-and-cookies`. Mas a variável `tem_politica_privacidade` deu False. Hipótese: o link foi capturado pelo `_subpage.py` mas categorizado como `termos_uso` (não `politica_privacidade`) devido ao `break`-no-primeiro-match do loop interno. O padrão `condi\w*[\s_\-]*de[\s_\-]*uso` ou similar pode ter casado o texto âncora antes do padrão de política.
+
+**Ação proposta para B7 (pós-piloto):** alterar `extract_subpage_candidates` para casar contra TODAS as categorias e gerar entries em todas (vs. atual one-shot). Custo: ~10 linhas no `_subpage.py`. Benefício: link que casa "política E termos" entra em ambas, e o VariableTest decide qualificação por conteúdo.
+
+**Achado 2 — `canal_titular` detectado em 1/5 (só anpd).**
+
+Coerente com observação anterior (item 11): o vocabulário "Portal do Titular", "Seus Direitos", "Exercício de Direitos" ainda é raro fora de sites com programa LGPD maduro. ANPD detectou via subpágina `encarregado` + e-mail prefixo whitelist (`encarregado@anpd.gov.br` capturado no HTML).
+
+**Ação proposta:** rodar piloto B4 (n=50) e revisar taxa de positivos. Se < 20%, considerar suplementar com classificador ML supervisionado em B9.
+
+**Achado 3 — `mercadolivre.com.br` coletado em ~7s pelo HttpFetcher sem escalar para Playwright.**
+
+Caso interessante: e-commerce expõe `/privacidade` via path estático no HTML inicial. Mesmo um banner OneTrust detectável (`tem_banner_cookies=True confidence=0.95`) foi detectado via HTML estático — não exigiu renderização JavaScript. **Argumento para banca:** sites bem-projetados em SEO mantêm conteúdo crítico no HTML inicial (acessibilidade + indexação), o que beneficia coleta automatizada.
+
+**Achado 4 — `confidence=0.65` somente em anpd `tem_banner_cookies`.**
+
+Único caso de medium hoje. Reflete variação real do site (banner accept falhou em runs anteriores e nesta também). Confidence graduado captura essa nuance — sem mascarar a observação como "banner detectado plenamente".
