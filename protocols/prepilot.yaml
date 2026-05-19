@@ -1,0 +1,78 @@
+# =============================================================================
+# Pré-piloto PrivacyScope — n=10 sites para validação manual
+#
+# Objetivo: detectar classes de erros no framework ANTES da piloto formal
+# B4 (n=50). NÃO gera métricas estatísticas defensáveis — gera diagnóstico.
+#
+# Composição: 5 governamentais + 5 empresariais, com diversidade vertical
+# (regulador, TI estatal, portal, fiscal, mídia x2, e-commerce x2, fintech,
+# SaaS). Aproximação do desenho estratificado planejado para a piloto formal.
+#
+# Output: data/prepilot/ (separado do smoke C3 em data/run/).
+# =============================================================================
+
+metadata:
+  protocol_version: "prepilot-v0.1.0"
+  description: "Pré-piloto n=10 para validação manual antes da piloto B4 (28/05/2026)"
+
+override_domains:
+  # --- Governamentais (5) ---
+  - "https://www.gov.br/anpd/pt-br"
+  - "https://www.serpro.gov.br"
+  - "https://www.gov.br"
+  - "https://www.gov.br/receitafederal/pt-br"
+  - "https://www.tcu.gov.br"   # 5o governamental — TCU como ente regulador de outra vertical
+  # --- Empresariais (5) ---
+  - "https://www.uol.com.br"
+  - "https://www.globo.com"
+  - "https://www.mercadolivre.com.br"
+  - "https://www.magazineluiza.com.br"
+  - "https://www.nubank.com.br"
+
+repository:
+  name: filesystem
+  params:
+    base_path: "data/prepilot/"
+
+result_store:
+  name: sqlite
+  params:
+    db_path: "data/prepilot/results.sqlite"
+
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+      - name: http_simples
+        params:
+          respect_robots_txt: true
+          max_per_category: 2          # mais permissivo para pegar política E aviso
+          max_total_subpages: 6
+          connect_timeout_s: 10
+          read_timeout_s: 30
+        escalate_if:
+          - signal: cookies_pre_consent_zero
+          - signal: html_root_smaller_than_bytes
+            threshold: 5000
+          - signal: subpage_selection_empty
+          - signal: has_js_shell_markers
+          - exception: JsRequiredError
+          - exception: NavigationFailedError
+      - name: playwright
+        params:
+          headless: true
+          phase_screenshots: true
+          revoke_after_consent: false
+          scroll_max_iterations: 3
+          max_per_category: 2
+          max_total_subpages: 6
+    abort_on:
+      - exception: RobotsDisallowedError
+
+tests:
+  - name: banner_cookies
+    params: {}
+  - name: politica_privacidade
+    params: {}
+  - name: canal_titular
+    params: {}
