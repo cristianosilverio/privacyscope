@@ -36,11 +36,19 @@ from bs4 import BeautifulSoup
 #: que casa contra atributos do <a>. Sobrescritível via params do protocolo.
 DEFAULT_SUBPAGE_CATEGORIES: dict[str, list[str]] = {
     "politica_privacidade": [
+        # Originais
         r"polit\w+[\s_\-]*de[\s_\-]*privacid",
         r"aviso[\s_\-]*de[\s_\-]*privacid",
         r"privacy[\s_\-]*policy",
         r"\blgpd\b",
         r"prote\w*[\s_\-]*de[\s_\-]*dados",
+        # Expansão 2026-05-19 — cobertura ampliada antes da piloto B4
+        r"notifica\w*[\s_\-]*de[\s_\-]*privacid",   # "notificação de privacidade"
+        r"declara\w*[\s_\-]*de[\s_\-]*privacid",    # "declaração de privacidade"
+        r"portal[\s_\-]*de[\s_\-]*privacid",        # "portal de privacidade"
+        r"central[\s_\-]*de[\s_\-]*privacid",       # "central de privacidade"
+        r"privacy[\s_\-]*notice",
+        r"privacy[\s_\-]*statement",
     ],
     "termos_uso": [
         r"termos[\s_\-]*de[\s_\-]*uso",
@@ -49,11 +57,25 @@ DEFAULT_SUBPAGE_CATEGORIES: dict[str, list[str]] = {
         r"condi\w*[\s_\-]*de[\s_\-]*uso",
     ],
     "encarregado": [
+        # Conceito legal específico: pessoa designada (art. 41 LGPD).
         r"encarregad\w+",
         r"\bdpo\b",
         r"data[\s_\-]*protection[\s_\-]*officer",
         r"fale[\s_\-]*conosco.*lgpd",
         r"contato.*prote\w*[\s_\-]*de[\s_\-]*dados",
+    ],
+    "canal_titular": [
+        # Mecanismos de exercício de direitos (art. 18 LGPD). Distinto do
+        # "encarregado" (pessoa) por escopo conceitual — detectar portais,
+        # centrais, formulários de exercício de direitos.
+        r"portal[\s_\-]*do[\s_\-]*titular",
+        r"central[\s_\-]*do[\s_\-]*titular",
+        r"canal[\s_\-]*do[\s_\-]*titular",
+        r"\bseus[\s_\-]*direitos\b",
+        r"direitos[\s_\-]*do[\s_\-]*titular",
+        r"exerc\w*[\s_\-]*de[\s_\-]*direitos",
+        r"requisi\w*[\s_\-]*lgpd",
+        r"solicita\w*[\s_\-]*lgpd",
     ],
 }
 

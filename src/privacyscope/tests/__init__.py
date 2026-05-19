@@ -1,1 +1,1 @@
-"""Plugins de Análise (VariableTest)."""
+"""Camada de Análise — VariableTests determinísticos e probabilísticos."""
