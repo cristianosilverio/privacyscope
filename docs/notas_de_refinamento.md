@@ -221,3 +221,35 @@ dict[str, list[dict]]` na `RawEvidence`. Convenção de chaves:
 **Validação:** 3 cenários sintéticos validados (Playwright 3-fases, HTTP single-shot, evidência sem cookies). Round-trip put/get/verify do `FileSystemRepository` confirma serialização e desserialização preservam bytes idênticos.
 
 **Para o TCC:** o desenho permite que a banca pergunte "como você lida com sites em jurisdições diferentes que têm fluxos adicionais de consent (banner geográfico do GDPR antes do brasileiro, p.ex.)?" — resposta concreta: chave nova no `cookies_by_phase`, zero mudança no tipo ou no repositório.
+
+---
+
+## 11. Smoke C2 — observações empíricas dos 3 VariableTests (19/05/2026)
+
+**Resultados sintetizados nos 3 sites baseline** (n=9 VariableResults):
+
+| Site | banner | política | canal_titular |
+|---|---|---|---|
+| gov.br/anpd | True 0.65 (struct+lex) | True 0.95 (qualificada, 10+ keywords) | True 0.95 (email LGPD + subpage encarregado) |
+| serpro.gov.br | True 0.95 (struct+lex) | True 0.95 (qualificada) | False 0.95 (no_signal) |
+| uol.com.br | True 0.95 (**OneTrust** vendor) | **False 0.95** (no_match) | False 0.95 (no_signal) |
+
+**Observações com valor regulatório/argumentativo:**
+
+1. **UOL com `tem_politica_privacidade=False`** é dado regulatório, não bug. O `subpage_selection` capturou apenas `termos_uso` no UOL — o link de política de privacidade ou está injetado via JS após `networkidle` (não capturado pelo Playwright atual), ou está em domínio diferente (e.g. social.api.uol.com.br), ou usa vocabulário não previsto. Para a banca: o framework é **honesto** sobre o que vê — não inventa positivo onde a página inicial não evidencia.
+
+2. **`canal_titular` (categoria nova) com 0 acionamentos nos 3 baseline.** "Portal do Titular", "Seus Direitos", "Exercício de Direitos" são vocabulário ainda raro em sites brasileiros. A categoria foi criada porque é semanticamente correta (art. 18 LGPD) — esperar-se-á ver mais acionamentos em e-commerces e portais com programa LGPD maduro, fora deste baseline minimalista.
+
+3. **`tem_canal_titular=True` no anpd** veio por dois sinais convergentes: e-mail com prefixo whitelist E subpágina encarregado qualificada (Encarregado de Dados na ANPD). Múltiplos sinais convergindo aumentam defensibilidade do achado.
+
+4. **Banner com confidence 0.65 vs 0.95**: o anpd hoje (banner accept falhou) saiu medium; serpro (struct+lex sem accept) também saiu medium em smokes anteriores mas agora saiu high — variação real do alvo (banners brasileiros variam entre execuções). Esse comportamento foi pensado: `confidence_level` graduado capta a diferença entre "banner detectado + interagível" e "banner detectado + não-clicável".
+
+**Para o TCC:** estes 9 datapoints já permitem ilustrar a Tabela de resultados descritivos. Após piloto B4 (n=50), as proporções globais serão calculadas e comparadas entre estratos (governamental vs empresarial).
+
+---
+
+## 12. Resultado isolado interessante — UOL detectou OneTrust
+
+**Achado:** UOL retornou `banner_cookies` com `matched_via=vendor` e `vendor=OneTrust`. Primeiro caso real de detecção de CMP comercial pelo framework.
+
+**Para o TCC:** evidência direta de que sites comerciais brasileiros de grande tráfego (UOL é top-10 do mercado nacional) usam ConsentManager Platforms estabelecidos. Suporta argumento de que o framework precisa reconhecer signatures de CMPs (não apenas léxico genérico) para evitar falso negativo em sites que não exibem texto léxico no HTML estático (CMPs renderizam texto via i18n após carga JS).

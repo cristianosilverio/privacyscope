@@ -51,6 +51,8 @@ from privacyscope.fetchers.fallback_chain import FallbackChain
 from privacyscope.storage.filesystem_repo import FileSystemRepository
 from privacyscope.storage.sqlite_store import SQLiteResultStore
 from privacyscope.tests.banner_cookies import BannerCookiesTest
+from privacyscope.tests.canal_titular import CanalTitularTest
+from privacyscope.tests.politica_privacidade import PoliticaPrivacidadeTest
 
 
 # =============================================================================
@@ -76,6 +78,8 @@ RESULT_STORES: dict[str, Type[ResultStore]] = {
 
 VARIABLE_TESTS: dict[str, Type[VariableTest]] = {
     "banner_cookies": BannerCookiesTest,
+    "politica_privacidade": PoliticaPrivacidadeTest,
+    "canal_titular": CanalTitularTest,
 }
 
 OUTPUT_RENDERERS: dict[str, Type[OutputRenderer]] = {}
