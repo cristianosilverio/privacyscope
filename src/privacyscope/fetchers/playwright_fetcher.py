@@ -753,13 +753,19 @@ class PlaywrightFetcher(PageFetcher):
             "post_revocation", phase_screenshots.get("post_consent")
         )
 
+        # Monta o dict de cookies por fase, omitindo fases vazias (post_revoke só
+        # existe quando revoke_after_consent=True; post_consent só existe se houve
+        # tentativa de aceitar banner). pre_consent sempre presente.
+        cookies_by_phase: dict[str, list[dict]] = {"pre_consent": cookies_pre}
+        if cookies_post:
+            cookies_by_phase["post_consent"] = cookies_post
+        if cookies_post_revoke:
+            cookies_by_phase["post_revocation"] = cookies_post_revoke
+
         return RawEvidence(
             domain=domain,
             html_pages=html_pages,
-            cookies=cookies_post if cookies_post else cookies_pre,
-            cookies_pre_consent=cookies_pre,
-            cookies_post_consent=cookies_post,
-            cookies_post_revocation=cookies_post_revoke,
+            cookies_by_phase=cookies_by_phase,
             consent_actions=consent_actions,
             headers=headers_by_url,
             screenshot=main_screenshot,

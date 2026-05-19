@@ -337,11 +337,19 @@ class HttpFetcher(PageFetcher):
                     all_cookies.extend(sub_cookies)
                     network_log.append(sub_net)
 
-        # 7) RawEvidence consolidada
+        # 7) RawEvidence consolidada — HttpFetcher é single-shot:
+        # captura cookies via Set-Cookie em uma única request sem interação JS.
+        # Convenção: fase "single" para fetchers atemporais. Omite a chave se
+        # não houve cookies, mantendo cookies_by_phase como dict de presença
+        # significativa.
+        cookies_by_phase: dict[str, list[dict]] = {}
+        if all_cookies:
+            cookies_by_phase["single"] = all_cookies
+
         return RawEvidence(
             domain=domain,
             html_pages=html_pages,
-            cookies=all_cookies,
+            cookies_by_phase=cookies_by_phase,
             headers=headers_by_url,
             screenshot=None,
             network_log=network_log,
@@ -357,7 +365,4 @@ __all__ = [
     "DEFAULT_SUBPAGE_CATEGORIES",
     "DEFAULT_HTTP_USER_AGENT",
     "DEFAULT_USER_AGENT",
-    "FetchError",
-    "RobotsDisallowedError",
-    "ResponseTooLargeError",
 ]

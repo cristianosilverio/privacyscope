@@ -69,18 +69,23 @@ def is_subpage_selection_empty(evidence: RawEvidence, params: dict) -> bool:
 
 
 def is_cookies_pre_consent_zero(evidence: RawEvidence, params: dict) -> bool:
-    """True se ``cookies_pre_consent`` estiver vazio.
+    """True se a fase ``pre_consent`` em ``cookies_by_phase`` estiver vazia/ausente.
 
-    Comportamento por fetcher:
-        - HttpFetcher: este sinal SEMPRE dispara (não captura cookies JS).
-          Use combinado com outros sinais para evitar over-escalation.
-        - PlaywrightFetcher: dispara se o site não setou nada antes do
-          accept — pode indicar site bem-comportado OU bloqueio anti-bot
-          impedindo carga de tracking.
+    Após a refatoração para fases dinâmicas (``cookies_by_phase: dict[str, list]``),
+    o sinal lê ``evidence.cookies_by_phase.get("pre_consent", [])``. A semântica
+    intencional preserva o comportamento por fetcher:
+
+        - HttpFetcher: popula ``cookies_by_phase["single"]``, NUNCA
+          ``"pre_consent"``. Logo este sinal SEMPRE dispara — exatamente o
+          que se quer para escalar a coleta ao PlaywrightFetcher quando o
+          objetivo é distinguir cookies pré/pós-consent (impossível sem JS).
+        - PlaywrightFetcher: popula ``"pre_consent"`` no primeiro networkidle.
+          Dispara se o site não setou nada antes do accept — pode indicar
+          site bem-comportado OU bloqueio anti-bot impedindo carga de tracking.
 
     Params: nenhum.
     """
-    return len(evidence.cookies_pre_consent) == 0
+    return len(evidence.cookies_by_phase.get("pre_consent", [])) == 0
 
 
 def are_consent_actions_all_failed(
@@ -156,7 +161,6 @@ SIGNAL_REGISTRY: dict[str, Callable[[RawEvidence, dict], bool]] = {
 
 __all__ = [
     "SIGNAL_REGISTRY",
-    "DEFAULT_JS_SHELL_MARKERS",
     "is_html_root_smaller_than_bytes",
     "is_subpage_selection_empty",
     "is_cookies_pre_consent_zero",

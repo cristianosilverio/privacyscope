@@ -118,12 +118,19 @@ def summarize(domain, evidence, error, elapsed):
     for line in audit:
         print(f"  {line}")
 
-    # Cookies por fase (só populados se Playwright executou)
-    if evidence.cookies_pre_consent or evidence.cookies_post_consent:
-        print(f"\n[Cookies por fase]")
-        print(f"  pre_consent:    {len(evidence.cookies_pre_consent)}")
-        print(f"  post_consent:   {len(evidence.cookies_post_consent)} "
-              f"(delta: {len(evidence.cookies_post_consent) - len(evidence.cookies_pre_consent):+d})")
+    # Cookies por fase — dict dinâmico, chaves variam por fetcher final do chain
+    cbp = evidence.cookies_by_phase
+    if cbp:
+        print(f"\n[Cookies por fase] (chaves: {sorted(cbp.keys())})")
+        pre = cbp.get("pre_consent", [])
+        post = cbp.get("post_consent", [])
+        single = cbp.get("single", [])
+        if pre:
+            print(f"  pre_consent:    {len(pre)}")
+        if post:
+            print(f"  post_consent:   {len(post)} (delta: {len(post) - len(pre):+d})")
+        if single:
+            print(f"  single:         {len(single)} (HttpFetcher single-shot)")
 
     # Consent actions
     if evidence.consent_actions:

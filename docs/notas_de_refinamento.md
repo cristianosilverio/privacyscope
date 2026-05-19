@@ -190,3 +190,34 @@ auditável.
 **Possível evolução futura (não para este TCC):** plugin `CurlCffiFetcher`
 que simula TLS fingerprint de Chrome real, para casos em que coleta é
 juridicamente lícita mas tecnicamente bloqueada por proteção excessiva.
+
+---
+
+## 10. Refatoração de cookies por fase para extensibilidade total (19/05/2026)
+
+**Motivação:** durante o desenho do `FileSystemRepository`, ficou claro que
+manter campos nominais `cookies`, `cookies_pre_consent`, `cookies_post_consent`,
+`cookies_post_revocation` na `RawEvidence` produzia um layout interno do
+`tar.gz` acoplado aos fetchers atuais. Adicionar um fetcher futuro com nova
+fase (ex.: `post_geo_consent`) ou um fetcher single-shot diferente do
+`HttpFetcher` exigiria mudar o tipo E o repositório — quebra de Open-Closed.
+
+**Decisão:** unificar em um único campo dinâmico `cookies_by_phase:
+dict[str, list[dict]]` na `RawEvidence`. Convenção de chaves:
+
+- `"single"` para fetchers single-shot (HttpFetcher; futuros CurlCffi etc.).
+- `"pre_consent"`, `"post_consent"`, `"post_revocation"` para o PlaywrightFetcher.
+- Outros fetchers escolhem nomes próprios livremente.
+
+**Impacto:**
+
+- `core/types.py`: 4 campos → 1 (`cookies` + os 3 nominais consolidados).
+- `playwright_fetcher.py`: popula `cookies_by_phase` montando dict por fase ativa.
+- `http_fetcher.py`: popula `cookies_by_phase={"single": [...]}` quando há cookies.
+- `_signals.py`: sinal `cookies_pre_consent_zero` lê `cookies_by_phase.get("pre_consent", [])`. Comportamento preservado: HttpFetcher (chave `"single"`, sem `"pre_consent"`) sempre dispara o sinal → escala para Playwright.
+- Smoke scripts: ajustados para iterar `cookies_by_phase.items()`.
+- `filesystem_repo.py`: layout `phases/<name>/cookies.json` é agnóstico ao fetcher — qualquer chave nova vira diretório novo automaticamente.
+
+**Validação:** 3 cenários sintéticos validados (Playwright 3-fases, HTTP single-shot, evidência sem cookies). Round-trip put/get/verify do `FileSystemRepository` confirma serialização e desserialização preservam bytes idênticos.
+
+**Para o TCC:** o desenho permite que a banca pergunte "como você lida com sites em jurisdições diferentes que têm fluxos adicionais de consent (banner geográfico do GDPR antes do brasileiro, p.ex.)?" — resposta concreta: chave nova no `cookies_by_phase`, zero mudança no tipo ou no repositório.

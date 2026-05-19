@@ -99,9 +99,16 @@ class RawEvidence(BaseModel):
         domain: Domain de origem.
         html_pages: dict path_relativo -> bytes do HTML. A chave é o path
             interno do site ('/', '/politica-privacidade', '/encarregado').
-        cookies: Lista de cookies fixados durante a sessão. Cada item contém
-            ao menos 'name', 'domain', 'path', 'expires', 'httpOnly',
-            'secure', 'sameSite'.
+        cookies_by_phase: Dict ``{phase_name: [cookies]}`` contendo todos os
+            cookies fixados durante a coleta, segmentados por fase. Cada cookie
+            é um dict com ao menos 'name', 'domain', 'path', 'expires',
+            'httpOnly', 'secure', 'sameSite'. Convenção de chaves:
+            ``"single"`` para fetchers single-shot (HttpFetcher, CurlCffi etc.,
+            que capturam cookies em uma única request HTTP sem interação JS);
+            ``"pre_consent" | "post_consent" | "post_revocation"`` para o
+            PlaywrightFetcher. Outros fetchers podem introduzir nomes próprios
+            de fase sem alteração do schema — a estrutura é deliberadamente
+            extensível por chave-string livre, em linha com ``phase_screenshots``.
         headers: dict url -> dict de cabeçalhos HTTP recebidos por aquela URL.
         screenshot: PNG full-page em bytes; None quando desabilitado no
             protocolo (ex.: execução de massa sem necessidade visual). Em
@@ -125,18 +132,6 @@ class RawEvidence(BaseModel):
             selecionam subpáginas (e.g., fetchers de endpoint único).
             Consumido pelos VariableTests para compor o audit_trail dos
             resultados e por análises agregadas de qualidade das regras.
-        cookies_pre_consent: Cookies presentes ANTES de qualquer interação
-            automática com banner de consent. Populado pelo PlaywrightFetcher
-            após o primeiro networkidle. Vazio para fetchers que não diferenciam
-            fases (HttpFetcher).
-        cookies_post_consent: Cookies presentes APÓS tentativa automatizada de
-            aceitar o banner ("aceitar tudo"). Igual a ``cookies_pre_consent``
-            quando o banner não foi detectado ou o clique falhou (delta zero
-            explicitamente registrado).
-        cookies_post_revocation: Cookies presentes APÓS tentativa automatizada
-            de revogar consentimento (abrir central de privacidade, rejeitar
-            categorias e fechar). Populado apenas quando
-            ``revoke_after_consent: true`` no protocolo. Vazio nos demais casos.
         consent_actions: Lista cronológica de ações automáticas tentadas pelo
             fetcher sobre UI de consent. Cada item:
             ``{phase: "accept"|"revoke"|"reject"|..., attempted, success,
@@ -155,10 +150,7 @@ class RawEvidence(BaseModel):
 
     domain: Domain
     html_pages: dict[str, bytes] = Field(default_factory=dict)
-    cookies: list[dict[str, Any]] = Field(default_factory=list)
-    cookies_pre_consent: list[dict[str, Any]] = Field(default_factory=list)
-    cookies_post_consent: list[dict[str, Any]] = Field(default_factory=list)
-    cookies_post_revocation: list[dict[str, Any]] = Field(default_factory=list)
+    cookies_by_phase: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     consent_actions: list[dict[str, Any]] = Field(default_factory=list)
     headers: dict[str, dict[str, str]] = Field(default_factory=dict)
     screenshot: Optional[bytes] = None

@@ -102,13 +102,14 @@ def summarize(domain, evidence, error, elapsed):
     print(f"Fetcher: {evidence.fetcher_name}")
     print(f"Timestamp UTC: {evidence.timestamp_utc.isoformat()}")
 
-    # Cookies por fase
-    pre = evidence.cookies_pre_consent
-    post = evidence.cookies_post_consent
-    revoke = evidence.cookies_post_revocation
-    print(f"\n[Cookies por fase]")
+    # Cookies por fase — agora em dict dinâmico cookies_by_phase
+    pre = evidence.cookies_by_phase.get("pre_consent", [])
+    post = evidence.cookies_by_phase.get("post_consent", [])
+    revoke = evidence.cookies_by_phase.get("post_revocation", [])
+    print(f"\n[Cookies por fase] (chaves: {sorted(evidence.cookies_by_phase.keys())})")
     print(f"  pre_consent:        {len(pre):>4}")
-    print(f"  post_consent:       {len(post):>4}    (delta: {len(post) - len(pre):+d})")
+    if post:
+        print(f"  post_consent:       {len(post):>4}    (delta: {len(post) - len(pre):+d})")
     if revoke:
         print(f"  post_revocation:    {len(revoke):>4}    (delta: {len(revoke) - len(post):+d})")
 
