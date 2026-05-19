@@ -104,7 +104,14 @@ class RawEvidence(BaseModel):
             'secure', 'sameSite'.
         headers: dict url -> dict de cabeçalhos HTTP recebidos por aquela URL.
         screenshot: PNG full-page em bytes; None quando desabilitado no
-            protocolo (ex.: execução de massa sem necessidade visual).
+            protocolo (ex.: execução de massa sem necessidade visual). Em
+            fetchers multi-fase (PlaywrightFetcher), corresponde ao screenshot
+            "principal" — tipicamente o pós-consent. Screenshots por fase ficam
+            em ``phase_screenshots``.
+        phase_screenshots: Dict ``{phase_name: PNG bytes}`` com capturas
+            específicas de cada fase do PlaywrightFetcher. Chaves esperadas:
+            ``"pre_consent" | "post_consent" | "post_revocation"``. Extensível
+            sem mudança de schema. Vazio em fetchers de fase única (HttpFetcher).
         network_log: Log HAR-like das requisições feitas durante a coleta.
             Cada item tem timing, status, content-type, content-length.
         subpage_selection: Auditoria da seleção automática de subpáginas pelo
@@ -155,6 +162,7 @@ class RawEvidence(BaseModel):
     consent_actions: list[dict[str, Any]] = Field(default_factory=list)
     headers: dict[str, dict[str, str]] = Field(default_factory=dict)
     screenshot: Optional[bytes] = None
+    phase_screenshots: dict[str, bytes] = Field(default_factory=dict)
     network_log: list[dict[str, Any]] = Field(default_factory=list)
     subpage_selection: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     fetcher_name: str = Field(..., min_length=1)

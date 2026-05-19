@@ -96,7 +96,83 @@ O campo `subpage_selection[*].matched_against` agora pode assumir os quatro valo
 
 ---
 
-## 4. Subpágina UOL retornou HTTP 403 (anti-bot)
+## 4. Primeiro datapoint regulatório real (PlaywrightFetcher smoke 18/05/2026)
+
+**Achado central:** UOL.com.br carrega **115 cookies antes** de qualquer interação com banner de consent. Delta para 118 após accept (apenas +3). Inversão do comportamento esperado pela LGPD: a maioria dos cookies entra **sem** consentimento prévio do titular.
+
+**Comparativo nos 3 alvos** (cookies_pre_consent → cookies_post_consent):
+- gov.br/anpd: 2 → 2 (delta 0; sem banner detectado — site não parece ter)
+- serpro.gov.br: 0 → 13 (delta +13; aderência aparente ao opt-in)
+- uol.com.br: **115 → 118** (delta +3; massiva exposição pré-consent)
+
+**Validações que esta execução produziu:**
+- ARIA como sinal primário funcionou: em serpro, o primeiro selector que casou foi `[aria-label*='aceitar' i]`, button text "Aceitar"
+- Cookies_set como variável composta (não apenas contagem) já mostra valor: nos cookies novos do serpro estão `_ga`, `_gid`, `_gat` (Google Analytics) e `li_sugr` (LinkedIn) — sinal claro de tracking de terceiros pós-consent
+- O framework distingue corretamente sites conformes (serpro) de não-conformes (uol) na metodologia pre/post-consent
+
+**Para o TCC:** os números acima vão para tabela da seção Resultados (após piloto rodar com n=50, mas o sinal qualitativo já é demonstrável).
+
+---
+
+## 5. Banner não detectado em gov.br/anpd (false negative aceitável)
+
+**Observação:** o site `https://www.gov.br/anpd/pt-br` não disparou nenhum dos seletores nem padrões de texto do banner. Resultado: `consent_actions[0].success = False` em 57ms.
+
+**Diagnóstico provável:** o site da ANPD aparentemente não usa banner de cookies pop-up — ou é um site bem-comportado (carrega apenas cookies necessários) ou tem implementação atípica.
+
+**Decisão:** não é bug; é dado. O framework registra `success=False` honestamente. Site permanece na amostra com `cookies_pre_consent == cookies_post_consent` (delta zero registrado explicitamente). Validar pós-piloto se a falha de detecção é generalizada em `.gov.br`.
+
+---
+
+## 6. Tempo por fetch acima do estimado
+
+**Observação:** smoke contra os 3 sites levou 42s + 38s + 29s = 109s total. Estimativa original era 5-15s por site.
+
+**Causa:** `_ensure_full_render` está custando ~10-15s por execução (networkidle 5s + 5 iterações de scroll 500ms cada + novo networkidle 5s, repetido para cada fase). Para 3 fases sem revoke: ~30-45s só de rendering.
+
+**Decisão para a piloto:** aceitar como está; total estimado para n=384 é ~3-4h em modo serial. Paralelizar com asyncio (8 workers) reduz para ~30-45min. Tolerável.
+
+**Refinamento opcional pós-piloto:** reduzir `scroll_max_iterations` de 5 para 3 (média observada de iterações reais é 1-2 antes de altura estabilizar). Pode cortar 5-10s por fase.
+
+---
+
+## 7. Screenshots por fase ocupam muito espaço em sites grandes
+
+**Observação:** screenshots full-page do UOL chegaram a 4MB cada (PNG). Para n=384 sites × 2 fases (pre, post) = ~3GB de screenshots em coleta sem revoke. Com revoke, +1.5GB.
+
+**Decisão:** aceitável no MVP; cada execução completa de protocolo é ~5GB com revoke. Disco local trivial.
+
+**Refinamento opcional pós-piloto:** parâmetro `screenshot_format: "png" | "jpeg"` e `screenshot_quality: 0-100` para JPEG. JPEG 75% reduz screenshots a ~500KB sem perda significativa de auditabilidade visual. Não é prioridade agora.
+
+---
+
+## 8. FallbackChain validado end-to-end com escalada por sinal (19/05/2026)
+
+**Cenário:** chain `[HttpFetcher → PlaywrightFetcher]` com `escalate_if` contendo 6 condições, contra os 3 sites baseline (gov.br/anpd, serpro.gov.br, uol.com.br).
+
+**Resultado:** todos os 3 sites escalaram via `cookies_pre_consent_zero` — comportamento esperado porque o HttpFetcher é estruturalmente cego a cookies setados via JS. Audit log de 7 eventos por site, totalmente rastreável.
+
+**Comparativo de tempos (sem screenshot por fase no chain, vs com no PlaywrightFetcher isolado):**
+
+| Site | Chain (s) | Playwright isolado (s) | Economia |
+|---|---|---|---|
+| gov.br/anpd | 19.6 | 42.5 | 22.9s |
+| serpro.gov.br | 37.8 | 37.9 | 0.1s |
+| uol.com.br | 26.7 | 28.6 | 1.9s |
+
+A economia em sites pesados de imagem (anpd com muitas tags) vem de `phase_screenshots=False`. Para a piloto real, **avaliar trade-off**: screenshots são evidência visual auditável, mas oneram disco (até 4 MB por fase em UOL).
+
+**Recomendação para piloto:** ativar `phase_screenshots=True` apenas em fase `post_consent` (não em `pre_consent` nem `post_revocation`). Reduz disco em ~50% sem perder a evidência principal.
+
+**Flutuação de cookies em UOL:**
+- Smoke 18/05: 115 pré-consent
+- Smoke 19/05: 130 pré-consent
+
+Subiu 13% em 24 horas — provavelmente flutuação normal de redes de ads que rotacionam ou cookies temporários. **Decisão para a piloto:** coletar cada site 2-3 vezes em dias diferentes e tomar mediana. Variabilidade é dado, não bug.
+
+---
+
+## 9. Subpágina UOL retornou HTTP 403 (anti-bot)
 
 **Site:** `https://noticias.uol.com.br/regras/termos-de-uso/`
 **Status:** `403 Forbidden`

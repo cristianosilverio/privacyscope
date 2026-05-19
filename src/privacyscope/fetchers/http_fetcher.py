@@ -26,17 +26,25 @@ from __future__ import annotations
 import asyncio
 import http.cookies as http_cookies
 import logging
-import re
 import time
 from typing import Any, ClassVar
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
-from bs4 import BeautifulSoup
 
 from privacyscope.core.interfaces import PageFetcher
 from privacyscope.core.types import Domain, RawEvidence, utc_now
+from privacyscope.fetchers._exceptions import (
+    FetchError,
+    ResponseTooLargeError,
+    RobotsDisallowedError,
+)
+from privacyscope.fetchers._subpage import (
+    DEFAULT_SUBPAGE_CATEGORIES,
+    extract_subpage_candidates,
+    validate_subpage_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,65 +52,22 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Constantes e defaults
 # =============================================================================
-DEFAULT_USER_AGENT = (
+DEFAULT_HTTP_USER_AGENT = (
     "PrivacyScope/0.1.0 (research; +https://github.com/cristianosilverio/privacyscope)"
 )
+# Alias para retrocompat. Novos códigos devem usar DEFAULT_HTTP_USER_AGENT.
+DEFAULT_USER_AGENT = DEFAULT_HTTP_USER_AGENT
 
 DEFAULT_MAX_RESPONSE_BYTES = 5_000_000  # 5 MB
 
-#: Padrões default para detecção de subpáginas relevantes em sites institucionais BR.
-#: Cada chave é uma categoria; cada valor é uma lista de regexes (case-insensitive)
-#: que casa contra o texto OU o href de um <a>. O usuário pode sobrescrever via YAML
-#: passando outro dict em params["subpage_categories"].
-#:
-#: Sobre o separador ``[\s_\-]*``: usado entre palavras-chave para casar tanto texto
-#: visível (que usa espaços: "Política de Privacidade") quanto hrefs (que usam
-#: hífens ou underscores: "politica-de-privacidade", "politica_de_privacidade").
-#: \s sozinho NÃO cobre hífens, então usar ``\s*`` aqui falharia em todos os hrefs reais.
-#:
-#: TODO (refinamento pós-piloto): os defaults atuais são permissivos demais.
-#: Smoke test em 17/05/2026 capturou false positives óbvios: "Denúncia de
-#: descumprimento da LGPD" e "3ª Semana Serpro de Privacidade e Proteção de Dados"
-#: foram classificados como politica_privacidade. Padrões com âncora fraca
-#: (``\blgpd\b`` sozinho, ``prote\w*[\s_\-]*de[\s_\-]*dados`` sozinho) sobrematcham.
-#: Refinar com base em rotulagem manual da piloto n=50. Ver docs/notas_de_refinamento.md.
-DEFAULT_SUBPAGE_CATEGORIES: dict[str, list[str]] = {
-    "politica_privacidade": [
-        r"polit\w+[\s_\-]*de[\s_\-]*privacid",
-        r"aviso[\s_\-]*de[\s_\-]*privacid",
-        r"privacy[\s_\-]*policy",
-        r"\blgpd\b",
-        r"prote\w*[\s_\-]*de[\s_\-]*dados",
-    ],
-    "termos_uso": [
-        r"termos[\s_\-]*de[\s_\-]*uso",
-        r"termos[\s_\-]*de[\s_\-]*servic",
-        r"terms[\s_\-]*of[\s_\-]*(use|service)",
-        r"condi\w*[\s_\-]*de[\s_\-]*uso",
-    ],
-    "encarregado": [
-        r"encarregad\w+",
-        r"\bdpo\b",
-        r"data[\s_\-]*protection[\s_\-]*officer",
-        r"fale[\s_\-]*conosco.*lgpd",
-        r"contato.*prote\w*[\s_\-]*de[\s_\-]*dados",
-    ],
-}
+# DEFAULT_SUBPAGE_CATEGORIES vem de privacyscope.fetchers._subpage e é
+# reexportado abaixo para retrocompatibilidade. Centralizar em _subpage permite
+# que HttpFetcher e PlaywrightFetcher compartilhem a mesma definição e que
+# refinamentos pós-piloto afetem os dois fetchers de uma vez só.
 
 
-# =============================================================================
-# Exceções
-# =============================================================================
-class FetchError(Exception):
-    """Erro fatal durante coleta — sem evidência possível."""
-
-
-class RobotsDisallowedError(FetchError):
-    """robots.txt do site proíbe coleta da raiz pelo nosso User-Agent."""
-
-
-class ResponseTooLargeError(FetchError):
-    """Resposta excedeu max_response_bytes."""
+# Exceções importadas de privacyscope.fetchers._exceptions (compartilhadas).
+# Reexportadas no __all__ para retrocompatibilidade.
 
 
 # =============================================================================
@@ -149,32 +114,13 @@ class HttpFetcher(PageFetcher):
         if not isinstance(cfg["respect_robots_txt"], bool):
             raise ValueError("respect_robots_txt deve ser bool")
 
-        cats = params.get("subpage_categories", DEFAULT_SUBPAGE_CATEGORIES)
-        if not isinstance(cats, dict):
-            raise ValueError("subpage_categories deve ser dict[str, list[str]]")
-        validated_cats: dict[str, list[str]] = {}
-        for cat, patterns in cats.items():
-            if not isinstance(cat, str) or not cat:
-                raise ValueError(f"chave de categoria deve ser string não-vazia; recebido: {cat!r}")
-            if not isinstance(patterns, list):
-                raise ValueError(f"patterns para '{cat}' deve ser lista de strings de regex")
-            for p in patterns:
-                if not isinstance(p, str):
-                    raise ValueError(f"pattern em '{cat}' deve ser str; recebido: {p!r}")
-                try:
-                    re.compile(p, re.IGNORECASE)
-                except re.error as e:
-                    raise ValueError(f"regex inválido em '{cat}': {p!r}: {e}") from e
-            validated_cats[cat] = list(patterns)
-        cfg["subpage_categories"] = validated_cats
-
-        cfg["max_per_category"] = params.get("max_per_category", 1)
-        if not isinstance(cfg["max_per_category"], int) or cfg["max_per_category"] < 1:
-            raise ValueError("max_per_category deve ser inteiro >= 1")
-
-        cfg["max_total_subpages"] = params.get("max_total_subpages", 5)
-        if not isinstance(cfg["max_total_subpages"], int) or cfg["max_total_subpages"] < 0:
-            raise ValueError("max_total_subpages deve ser inteiro >= 0")
+        # Validação de subpage_categories, max_per_category, max_total_subpages
+        # delegada ao módulo compartilhado fetchers/_subpage.py — mesma lógica
+        # consumida pelo PlaywrightFetcher.
+        cats, mpc, mts = validate_subpage_config(params)
+        cfg["subpage_categories"] = cats
+        cfg["max_per_category"] = mpc
+        cfg["max_total_subpages"] = mts
 
         return cfg
 
@@ -212,103 +158,6 @@ class HttpFetcher(PageFetcher):
             return None, f"robots.txt {robots_url}: status {resp.status_code} (ignorado)"
         except httpx.HTTPError as e:
             return None, f"robots.txt {robots_url}: {type(e).__name__}: {e} (ignorado)"
-
-    # ------------------------------------------------------------------
-    # Extração de subpáginas
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _extract_subpage_candidates(
-        html: bytes,
-        base_url: str,
-        categories: dict[str, list[str]],
-        max_per_category: int,
-        max_total: int,
-    ) -> dict[str, list[dict[str, Any]]]:
-        """Encontra subpáginas candidatas no HTML raiz e devolve auditoria por categoria.
-
-        Retorno (estrutura compatível com RawEvidence.subpage_selection):
-            {categoria: [{url, matched_pattern, matched_against, snippet}, ...], ...}
-
-        Cada <a> contribui para no máximo uma categoria. Categorias sem matches
-        são omitidas do retorno.
-        """
-        if max_total == 0:
-            return {}
-
-        soup = BeautifulSoup(html, "lxml")
-        compiled = {
-            cat: [re.compile(p, re.IGNORECASE) for p in patterns]
-            for cat, patterns in categories.items()
-        }
-
-        result: dict[str, list[dict[str, Any]]] = {cat: [] for cat in categories}
-        seen_urls: set[str] = set()
-        total = 0
-
-        for a in soup.find_all("a", href=True):
-            if total >= max_total:
-                break
-            href = str(a["href"]).strip()
-            text = (a.get_text() or "").strip()
-            aria_label = str(a.get("aria-label", "")).strip()
-            title_attr = str(a.get("title", "")).strip()
-            if not href:
-                continue
-
-            # Ordem de inspeção (importante para o audit_trail):
-            #   1) text        — o que humano vê
-            #   2) aria-label  — o que assistive tech "vê" (WCAG / eMAG / LBI)
-            #   3) title       — tooltip
-            #   4) href        — URL/path
-            # Sites com acessibilidade decente (gov.br, grandes empresas) frequentemente
-            # têm ícones/links com texto vago mas aria-label explícito.
-            inspection_order = [
-                ("text",       text,       text.lower()),
-                ("aria-label", aria_label, aria_label.lower()),
-                ("title",      title_attr, title_attr.lower()),
-                ("href",       href,       href.lower()),
-            ]
-
-            for cat, regexes in compiled.items():
-                if len(result[cat]) >= max_per_category:
-                    continue
-                matched_pattern: str | None = None
-                matched_against: str | None = None
-                snippet_source: str = ""
-
-                for source_name, source_raw, source_lower in inspection_order:
-                    if not source_lower:
-                        continue
-                    for rx in regexes:
-                        if rx.search(source_lower):
-                            matched_pattern = rx.pattern
-                            matched_against = source_name
-                            snippet_source = source_raw
-                            break
-                    if matched_pattern is not None:
-                        break
-
-                if matched_pattern is None:
-                    continue
-
-                full_url = urljoin(base_url, href)
-                if not full_url.startswith(("http://", "https://")):
-                    continue
-                if full_url in seen_urls:
-                    continue
-                seen_urls.add(full_url)
-
-                result[cat].append({
-                    "url": full_url,
-                    "matched_pattern": matched_pattern,
-                    "matched_against": matched_against,
-                    "snippet": snippet_source[:120],
-                })
-                total += 1
-                break  # cada <a> casa em no máximo uma categoria
-
-        # Omite categorias vazias
-        return {cat: items for cat, items in result.items() if items}
 
     # ------------------------------------------------------------------
     # Extração de cookies HTTP
@@ -446,7 +295,7 @@ class HttpFetcher(PageFetcher):
             network_log.append(root_net)
 
             # 4) Extração de subpáginas candidatas
-            subpage_selection = self._extract_subpage_candidates(
+            subpage_selection = extract_subpage_candidates(
                 root_body,
                 domain.url,
                 cfg["subpage_categories"],
@@ -506,6 +355,7 @@ class HttpFetcher(PageFetcher):
 __all__ = [
     "HttpFetcher",
     "DEFAULT_SUBPAGE_CATEGORIES",
+    "DEFAULT_HTTP_USER_AGENT",
     "DEFAULT_USER_AGENT",
     "FetchError",
     "RobotsDisallowedError",
