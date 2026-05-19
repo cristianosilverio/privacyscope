@@ -1,1 +1,5 @@
-"""Repositórios de evidência bruta (RawRepository) e resultados estruturados (ResultStore)."""
+"""Persistência: Raw Repository (evidência bruta) e Result Store (resultados)."""
+
+from privacyscope.storage.filesystem_repo import FileSystemRepository
+
+__all__ = ["FileSystemRepository"]

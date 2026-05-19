@@ -169,18 +169,33 @@ O hash SHA-256 do `protocol.yaml` é gravado no `audit_log.jsonl` no início de 
 
 ## 6. Cadeia de custódia da evidência
 
-Cada site analisado gera um pacote tar.gz com a seguinte estrutura interna:
+Cada site analisado gera um pacote tar.gz com a seguinte estrutura interna,
+implementada por `FileSystemRepository` em `src/privacyscope/storage/filesystem_repo.py`:
 
 ```
-<domain>__<run_id>__<timestamp>/
-├── html.gz                  # HTML completo da página de entrada
-├── html_subpages/           # políticas, termos, encarregado, etc.
-├── cookies.json             # cookies set durante a sessão (Playwright)
-├── headers.json             # headers HTTP de cada requisição
-├── screenshot.png           # captura full-page
-├── network.har              # opcional, trace HAR
-└── meta.json                # url, status, user-agent, timestamps, plugin_versions
+<domain_slug>__<run_id>__<ts>/
+├── meta.json                       # canônico — reconstrói RawEvidence
+├── html_root.html                  # se html_pages['/'] não-vazio (HTML puro, tar.gz já comprime)
+├── html_subpages/                  # se houver outras chaves em html_pages
+│   ├── <path-slug>.html
+│   └── _index.json                 # mapeia slug -> path original (preserva URL ao descompactar)
+├── headers.json                    # se headers não-vazio
+├── network.json                    # se network_log não-vazio
+└── phases/                         # se cookies_by_phase OU phase_screenshots têm chaves
+    └── <phase_name>/               # nome livre: "single", "pre_consent", "post_consent", "post_revocation", ...
+        ├── cookies.json            # se essa fase tem cookies
+        └── screenshot.png          # se essa fase tem screenshot
 ```
+
+Arquivos só são criados quando os campos correspondentes da `RawEvidence` têm
+conteúdo. Auditor abrindo o tar vê **exatamente** o que foi capturado — sem
+arquivos vazios decorativos.
+
+A estrutura `phases/<phase_name>/` é **agnóstica ao fetcher**: o repositório
+itera as chaves de `cookies_by_phase` e `phase_screenshots` da `RawEvidence`
+sem conhecer nomes específicos. Um fetcher novo que introduza fase
+`post_geo_consent` cria automaticamente o diretório correspondente, sem
+mudança no repo.
 
 Para cada tar:
 - Calcula-se SHA-256 do arquivo.
