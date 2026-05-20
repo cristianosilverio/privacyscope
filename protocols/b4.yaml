@@ -1,0 +1,133 @@
+# =============================================================================
+# Piloto B4 — coleta estratificada n=50 (buffer 59)
+#
+# Amostra gerada por scripts/sample_b4.py (seed 20260520, Tranco top-1M .br)
+# e revisada manualmente em 2026-05-20. Removido ns4.to.gov.br (name server,
+# não site institucional — heurística de infraestrutura reforçada após este
+# achado). Buffer efetivo: 11 governamentais + 48 empresariais.
+#
+# Alocação 40 empresariais + 10 governamentais (sobre-representação do estrato
+# governamental; objetivo = panorama geral do mercado, não comparação entre
+# estratos). Seleção das 50 efetivas por estrato será pós-processada do SQLite,
+# tomando as 40 corp + 10 gov primeiras que coletarem com sucesso.
+#
+# Folga: gov 11→10 (margem 1); corp 48→40 (margem 8). gov tende a coletar bem
+# (sem anti-bot; todos os .gov.br do pré-piloto coletaram). Se >1 gov falhar,
+# completar amostra posteriormente.
+# =============================================================================
+
+metadata:
+  protocol_version: "b4-pilot-v1.0.0"
+  description: "Piloto B4 n=50 estratificado (buffer 59: 11 gov + 48 corp); 3 variaveis deterministicas"
+
+override_domains:
+  # --- Governamentais (11) ---
+  - "https://agenciasp.sp.gov.br"
+  - "https://der.mg.gov.br"
+  - "https://franciscomorato.sp.gov.br"
+  - "https://viana.es.gov.br"
+  - "https://proeis.rj.gov.br"
+  - "https://sefa.pa.gov.br"
+  - "https://cade.gov.br"
+  - "https://dominiopublico.gov.br"
+  - "https://saude.ce.gov.br"
+  - "https://bcb.gov.br"
+  - "https://saude.df.gov.br"
+  # --- Empresariais (48) ---
+  - "https://wedrop.com.br"
+  - "https://aba-agroecologia.org.br"
+  - "https://wepink.com.br"
+  - "https://conectkids.com.br"
+  - "https://abracasa.com.br"
+  - "https://montanhascapixabas.com.br"
+  - "https://infosetetelecom.com.br"
+  - "https://bancomidway.com.br"
+  - "https://canaldareceita.com.br"
+  - "https://autodata.com.br"
+  - "https://riovagas.com.br"
+  - "https://gigasena.com.br"
+  - "https://zamtech.com.br"
+  - "https://monteleste.com.br"
+  - "https://likebrasil.com.br"
+  - "https://educacao.aju.br"
+  - "https://grv.net.br"
+  - "https://ci.com.br"
+  - "https://paratodosce.com.br"
+  - "https://viadoterno.com.br"
+  - "https://evangelizandoumacrianca.com.br"
+  - "https://rohrmaquinas.com.br"
+  - "https://terrafibra.net.br"
+  - "https://packdemusicas.com.br"
+  - "https://aiamis.com.br"
+  - "https://beepsaude.com.br"
+  - "https://tmbeducacao.com.br"
+  - "https://royce.com.br"
+  - "https://apufsc.org.br"
+  - "https://cupomverde.com.br"
+  - "https://logonweb.net.br"
+  - "https://polettotelecom.com.br"
+  - "https://xfin.com.br"
+  - "https://dedicacaodelta.com.br"
+  - "https://visiotelecom.com.br"
+  - "https://mysmartclinic.com.br"
+  - "https://contaja.com.br"
+  - "https://hupishop.com.br"
+  - "https://calhaumida.com.br"
+  - "https://gummy.com.br"
+  - "https://banrisul.com.br"
+  - "https://metalhorse.com.br"
+  - "https://uniexames.com.br"
+  - "https://bradescard.com.br"
+  - "https://flashfibra.net.br"
+  - "https://vagalume.com.br"
+  - "https://luisimoveis.com.br"
+  - "https://cfcprodutivo.com.br"
+
+repository:
+  name: filesystem
+  params:
+    base_path: "data/b4/"
+
+result_store:
+  name: sqlite
+  params:
+    db_path: "data/b4/results.sqlite"
+
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+      - name: http_simples
+        params:
+          respect_robots_txt: true
+          max_per_category: 2
+          max_total_subpages: 6
+          connect_timeout_s: 10
+          read_timeout_s: 30
+        escalate_if:
+          - signal: cookies_pre_consent_zero
+          - signal: html_root_smaller_than_bytes
+            threshold: 5000
+          - signal: subpage_selection_empty
+          - signal: has_js_shell_markers
+          - exception: JsRequiredError
+          - exception: NavigationFailedError
+          - exception: FetchError   # F1: escala anti-bot 403 ao Playwright
+      - name: playwright
+        params:
+          headless: true
+          phase_screenshots: true
+          revoke_after_consent: false
+          scroll_max_iterations: 3
+          max_per_category: 2
+          max_total_subpages: 6
+    abort_on:
+      - exception: RobotsDisallowedError
+
+tests:
+  - name: banner_cookies
+    params: {}
+  - name: politica_privacidade
+    params: {}
+  - name: canal_titular
+    params: {}

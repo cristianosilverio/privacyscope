@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import csv
 import random
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -77,6 +78,25 @@ def _is_excluded(domain_str: str, excluded_substrings: list[str]) -> bool:
     return any(sub in d for sub in excluded_substrings)
 
 
+# Prefixos de PRIMEIRO LABEL que indicam subdomínio de infraestrutura (não
+# site institucional navegável). Detectado no pré-piloto B4: ns4.to.gov.br
+# (name server) entrou na amostra. Cobre name servers, mail, hosting, etc.
+_INFRA_LABEL_RE = re.compile(
+    r"^(ns\d*|dns\d*|mx\d*|smtp\d*|pop\d*|imap\d*|mail\d*|webmail|ftp\d*|sftp|"
+    r"cpanel|webdisk|autodiscover|autoconfig|vpn|gateway|proxy|relay)$",
+    re.IGNORECASE,
+)
+
+
+def _is_infrastructure_subdomain(host: str) -> bool:
+    """True se o primeiro label do host for prefixo de infraestrutura.
+
+    Ex.: ns4.to.gov.br -> primeiro label 'ns4' -> True (name server, não site).
+    """
+    first_label = host.split(".", 1)[0]
+    return bool(_INFRA_LABEL_RE.match(first_label))
+
+
 def stratify_and_sample(
     domains: list,
     *,
@@ -112,7 +132,7 @@ def stratify_and_sample(
         host = dom.url.replace("https://", "").replace("http://", "").rstrip("/").lower()
         report.total_br += 1
 
-        if _is_excluded(host, excluded_substrings):
+        if _is_excluded(host, excluded_substrings) or _is_infrastructure_subdomain(host):
             report.excluded_count += 1
             continue
 
