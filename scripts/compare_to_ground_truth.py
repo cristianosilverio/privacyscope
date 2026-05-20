@@ -50,22 +50,51 @@ def parse_bool(s: str) -> bool | None:
     return None
 
 
+def _read_text_robust(path: Path) -> str:
+    """Le arquivo texto tolerando encoding. Excel no Windows-BR salva CSV em
+    cp1252 (Windows-1252), nao utf-8. Tenta utf-8-sig (lida com BOM) e cai
+    para cp1252 e por fim latin-1 (que nunca falha por byte invalido).
+    """
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            return path.read_text(encoding=enc)
+        except UnicodeDecodeError:
+            continue
+    # latin-1 nunca chega aqui, mas por seguranca:
+    return path.read_text(encoding="latin-1", errors="replace")
+
+
+def _detect_delimiter(header_line: str) -> str:
+    """Detecta delimitador do CSV. Excel no Windows-BR usa ';' por padrao
+    (separador de lista do locale pt-BR); ferramentas internacionais usam ','.
+    Heuristica: o delimitador correto e o que aparece mais na linha de header.
+    """
+    candidates = [",", ";", "\t"]
+    counts = {d: header_line.count(d) for d in candidates}
+    best = max(counts, key=counts.get)
+    return best if counts[best] > 0 else ","
+
+
 def load_ground_truth(path: Path) -> dict[str, dict[str, dict]]:
     """Retorna ``{domain_url: {variable_name: {value: bool|None, confidence: str}}}``."""
+    import io
+
     gt: dict[str, dict[str, dict]] = {}
-    with open(path, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            dom = row["domain_url"].strip()
-            if not dom:
-                continue
-            per_var = {}
-            for v in VARIABLES:
-                per_var[v] = {
-                    "value": parse_bool(row.get(f"{v}_value", "")),
-                    "confidence": (row.get(f"{v}_confidence", "") or "").strip().lower(),
-                }
-            gt[dom] = per_var
+    text = _read_text_robust(text_path := path)
+    first_line = text.splitlines()[0] if text.strip() else ""
+    delimiter = _detect_delimiter(first_line)
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    for row in reader:
+        dom = (row.get("domain_url") or "").strip()
+        if not dom:
+            continue
+        per_var = {}
+        for v in VARIABLES:
+            per_var[v] = {
+                "value": parse_bool(row.get(f"{v}_value", "")),
+                "confidence": (row.get(f"{v}_confidence", "") or "").strip().lower(),
+            }
+        gt[dom] = per_var
     return gt
 
 

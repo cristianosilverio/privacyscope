@@ -149,22 +149,22 @@ def _serialize_evidence_to_dir(evidence: RawEvidence, dest_dir: Path) -> None:
     if root_html:
         (dest_dir / HTML_ROOT_FILENAME).write_bytes(root_html)
 
-    # 3) html_subpages/<slug>.html
+    # 3) html_subpages/sub_NNN.html
+    # Correção C (2026-05-20): nome de arquivo indexado curto (sub_001.html)
+    # em vez do slug derivado da URL. URLs longas (ex.: slug de notícia do
+    # globo.com com >100 chars) somadas ao path do tempdir do Windows
+    # estouravam o limite MAX_PATH de 260 caracteres, causando FileNotFoundError
+    # e perda silenciosa do site. O _index.json preserva o mapeamento
+    # nome→URL original para reconstrução fiel em get().
     subpages = {k: v for k, v in evidence.html_pages.items() if k != "/"}
     if subpages:
         sub_dir = dest_dir / HTML_SUBPAGES_DIR
         sub_dir.mkdir(exist_ok=True)
         index: dict[str, str] = {}
-        for path_key, body in subpages.items():
-            slug = _path_slug(path_key)
-            # Evita colisão de slugs
-            candidate = slug
-            counter = 1
-            while candidate in index:
-                counter += 1
-                candidate = f"{slug}_{counter}"
-            index[candidate] = path_key
-            (sub_dir / f"{candidate}.html").write_bytes(body)
+        for i, (path_key, body) in enumerate(subpages.items(), start=1):
+            fname = f"sub_{i:03d}"
+            index[fname] = path_key
+            (sub_dir / f"{fname}.html").write_bytes(body)
         (sub_dir / "_index.json").write_text(
             json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
         )

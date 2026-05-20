@@ -133,9 +133,18 @@ class HttpFetcher(PageFetcher):
     ) -> tuple[RobotFileParser | None, str | None]:
         """Baixa e parseia /robots.txt do host. Retorna (parser, msg_erro_opcional).
 
-        Convenção RFC 9309: 404 ou indisponível = sem restrição; 401/403 = totalmente
-        proibido (registramos como nota mas não bloqueamos por completo, deixando a
-        decisão fina ao can_fetch chamado depois).
+        Tratamento de status conforme RFC 9309 (Koster et al., 2022):
+            - 200: parseia as regras normalmente.
+            - 4xx (incl. 401/403/404): "unavailable" — o crawler PODE assumir
+              ausência de restrições (allow-all). Seção 2.3.1.4 da RFC. Decisão
+              revisada em 2026-05-20: 401/403 deixam de ser tratados como
+              Disallow:/ porque tipicamente decorrem de proteção anti-bot
+              genérica (e.g., Akamai retornando 403 ao robots.txt), não de
+              diretiva de exclusão dirigida a crawlers. O tratamento anterior
+              (conservador) fazia o framework perder sites cuja home é
+              publicamente acessível mas cujo robots.txt é bloqueado por WAF.
+            - 5xx: "unreachable" — a RFC recomenda assumir disallow total
+              (servidor não conseguiu servir as regras; conservador justificado).
         """
         parsed = urlparse(base_url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
@@ -148,13 +157,14 @@ class HttpFetcher(PageFetcher):
                 parser = RobotFileParser()
                 parser.parse(resp.text.splitlines())
                 return parser, None
-            if resp.status_code in (401, 403):
-                # Tratar como acesso restrito a robots; conservador.
+            if 400 <= resp.status_code < 500:
+                # RFC 9309 §2.3.1.4: 4xx = unavailable → allow-all.
+                return None, f"robots.txt {robots_url}: status {resp.status_code} (4xx; allow-all per RFC 9309)"
+            if resp.status_code >= 500:
+                # RFC 9309: 5xx = unreachable → disallow total (conservador).
                 parser = RobotFileParser()
                 parser.parse(["User-agent: *", "Disallow: /"])
-                return parser, f"robots.txt {robots_url}: status {resp.status_code} (interpretado como Disallow:/)"
-            if resp.status_code == 404:
-                return None, None
+                return parser, f"robots.txt {robots_url}: status {resp.status_code} (5xx; disallow per RFC 9309)"
             return None, f"robots.txt {robots_url}: status {resp.status_code} (ignorado)"
         except httpx.HTTPError as e:
             return None, f"robots.txt {robots_url}: {type(e).__name__}: {e} (ignorado)"

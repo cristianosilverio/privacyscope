@@ -71,6 +71,10 @@ fetcher:
           - signal: has_js_shell_markers
           - exception: JsRequiredError
           - exception: NavigationFailedError
+          # Refinamento F1 (2026-05-20): escala ao Playwright em qualquer
+          # FetchError do http_simples (inclui HTTP 403 de anti-bot).
+          # RobotsDisallowedError continua abortando (abort_on tem precedência).
+          - exception: FetchError
       - name: playwright
         params:
           headless: true

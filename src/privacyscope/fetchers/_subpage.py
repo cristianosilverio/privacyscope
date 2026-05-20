@@ -49,6 +49,13 @@ DEFAULT_SUBPAGE_CATEGORIES: dict[str, list[str]] = {
         r"central[\s_\-]*de[\s_\-]*privacid",       # "central de privacidade"
         r"privacy[\s_\-]*notice",
         r"privacy[\s_\-]*statement",
+        # Refinamento A (2026-05-19, pós pré-piloto n=10): link rotulado
+        # apenas "Privacidade"/"Privacy" (sem "política de"). FN observado em
+        # uol.com.br e mercadolivre.com.br. Baixa precisão isolada, mas o
+        # VariableTest qualifica por conteúdo (>=3 keywords, >=500 bytes),
+        # filtrando falsos positivos na 2a etapa.
+        r"\bprivacidade\b",
+        r"\bprivacy\b",
     ],
     "termos_uso": [
         r"termos[\s_\-]*de[\s_\-]*uso",
@@ -78,6 +85,26 @@ DEFAULT_SUBPAGE_CATEGORIES: dict[str, list[str]] = {
         r"solicita\w*[\s_\-]*lgpd",
     ],
 }
+
+
+#: Path-blockers (Refinamento D, 2026-05-20): padrões de URL que indicam
+#: conteúdo editorial/efêmero (notícias, blog, eventos), NÃO documentos
+#: normativos de privacidade. Candidatos cujo full_url casa qualquer um destes
+#: são descartados ANTES do download — evita (a) falsos positivos do padrão
+#: "privacidade" isolado casando slugs de notícia (ex.: globo.com
+#: ".../pede-privacidade.ghtml") e (b) downloads inúteis em escala no n=384.
+#: Sobrescritível via params['path_blockers'] no protocolo.
+DEFAULT_PATH_BLOCKERS: list[str] = [
+    r"/noticias?/",
+    r"/blog/",
+    r"/artigos?/",
+    r"/materias?/",
+    r"/post/",
+    r"/imprensa/",
+    r"\.ghtml",
+    r"/videos?/",
+    r"/galeria/",
+]
 
 
 def validate_subpage_config(
@@ -136,6 +163,7 @@ def extract_subpage_candidates(
     categories: dict[str, list[str]],
     max_per_category: int,
     max_total: int,
+    path_blockers: list[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Encontra subpáginas candidatas no HTML e devolve auditoria por categoria.
 
@@ -172,9 +200,17 @@ def extract_subpage_candidates(
         cat: [re.compile(p, re.IGNORECASE) for p in patterns]
         for cat, patterns in categories.items()
     }
+    # Refinamento D: compila path-blockers (default ou override do protocolo).
+    blocker_patterns = path_blockers if path_blockers is not None else DEFAULT_PATH_BLOCKERS
+    compiled_blockers = [re.compile(p, re.IGNORECASE) for p in blocker_patterns]
 
     result: dict[str, list[dict[str, Any]]] = {cat: [] for cat in categories}
-    seen_urls: set[str] = set()
+    # Refinamento B (2026-05-19): dedup POR categoria (nao global), permitindo
+    # que a mesma URL apareca em multiplas categorias quando casa padroes de
+    # mais de uma (ex.: /privacidade pode ser politica E canal do titular).
+    # ``seen_any`` controla o teto global de URLs unicas a baixar (max_total).
+    seen_per_cat: dict[str, set[str]] = {cat: set() for cat in categories}
+    seen_any: set[str] = set()
     total = 0
 
     for a in soup.find_all("a", href=True):
@@ -222,9 +258,16 @@ def extract_subpage_candidates(
             full_url = urljoin(base_url, href)
             if not full_url.startswith(("http://", "https://")):
                 continue
-            if full_url in seen_urls:
+            # Refinamento D: descarta candidatos de conteúdo editorial/efêmero
+            # (notícias, blog, eventos), que casam "privacidade" por acaso no
+            # slug mas não são documentos normativos.
+            if any(b.search(full_url) for b in compiled_blockers):
                 continue
-            seen_urls.add(full_url)
+            # Dedup por categoria: a mesma URL pode entrar em categorias
+            # distintas, mas nao duas vezes na mesma categoria.
+            if full_url in seen_per_cat[cat]:
+                continue
+            seen_per_cat[cat].add(full_url)
 
             result[cat].append({
                 "url": full_url,
@@ -232,8 +275,14 @@ def extract_subpage_candidates(
                 "matched_against": matched_against,
                 "snippet": snippet_source[:120],
             })
-            total += 1
-            break  # cada <a> casa em no máximo uma categoria
+            # total conta URLs UNICAS (uma URL em 2 categorias = 1 download).
+            if full_url not in seen_any:
+                seen_any.add(full_url)
+                total += 1
+                if total >= max_total:
+                    break
+        # Refinamento B: sem break entre categorias — um <a> pode casar
+        # multiplas categorias (politica E canal, p.ex.).
 
     # Omite categorias vazias
     return {cat: items for cat, items in result.items() if items}
@@ -241,6 +290,7 @@ def extract_subpage_candidates(
 
 __all__ = [
     "DEFAULT_SUBPAGE_CATEGORIES",
+    "DEFAULT_PATH_BLOCKERS",
     "validate_subpage_config",
     "extract_subpage_candidates",
 ]

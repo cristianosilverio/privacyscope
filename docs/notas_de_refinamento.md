@@ -285,3 +285,66 @@ Caso interessante: e-commerce expõe `/privacidade` via path estático no HTML i
 **Achado 4 — `confidence=0.65` somente em anpd `tem_banner_cookies`.**
 
 Único caso de medium hoje. Reflete variação real do site (banner accept falhou em runs anteriores e nesta também). Confidence graduado captura essa nuance — sem mascarar a observação como "banner detectado plenamente".
+
+---
+
+## 14. Pré-piloto n=10 com validação manual + refinamentos A/B (19/05/2026)
+
+**Métricas do pré-piloto (antes dos refinamentos), n=9 coletados (1 falha):**
+
+| Variável | Acurácia | Precisão | Recall | F1 | Discordâncias |
+|---|---|---|---|---|---|
+| tem_banner_cookies | 0,778 | 0,778 | 1,000 | 0,875 | 2 FP (nubank, serpro) |
+| tem_politica_privacidade | 0,667 | 0,857 | 0,750 | 0,800 | 1 FP + 2 FN |
+| tem_canal_titular | 0,667 | 1,000 | 0,625 | 0,769 | 3 FN |
+
+Ressalva: TN=0 em banner/política e kappa instável (até negativo) — viés de composição (amostra toda institucional grande, poucos negativos verdadeiros). Métricas absolutas pouco informativas neste n; foco nas classes de erro.
+
+**Correções de ground truth identificadas durante análise:**
+- Nubank `tem_politica_privacidade`: rotulagem manual estava errada. Nubank TEM política em `/transparencia/politicas-de-privacidade-e-seguranca/politica-de-privacidade` e e-mail DPO. O "FP" do framework era acerto parcial (pegou a sub-página de segurança vizinha). Corrigido para True no ground_truth.
+- Nubank e serpro `tem_banner_cookies`: confirmado sem banner. Os 2 FP são reais.
+
+**Classes de erro e refinamentos aplicados:**
+
+- **Refinamento A (aplicado):** link rotulado apenas "Privacidade"/"Privacy" (sem "política de") não casava nenhum padrão. Causou FN em uol e mercadolivre. Adicionados padrões `\bprivacidade\b` e `\bprivacy\b` em `politica_privacidade`. Precisão isolada baixa, mas o VariableTest qualifica por conteúdo (>=3 keywords, >=500 bytes), filtrando FP na 2a etapa.
+
+- **Refinamento B (aplicado):** `extract_subpage_candidates` fazia `break` no primeiro match de categoria, jogando `/privacidade` em uma só categoria. Alterado para casar TODAS as categorias (dedup por categoria; `total` conta URLs únicas para respeitar `max_total`). Agora `/privacidade` pode alimentar `politica_privacidade` E `canal_titular` simultaneamente — corrige por tabela cruzada os FN de canal em gov.br e mercadolivre.
+
+**Adiado para B7 (não refinar com n≤10 — risco de overfit):**
+- Banner FP (markup de cookie presente sem banner ativo): exige detecção de visibilidade via rendering (CSS display/position/z-index), não só markup. Trabalho grande.
+- FP de path-match (href contém "privacidade" mas página é outra, ex.: política de segurança): exigir mais keywords quando match foi via href, não texto.
+- Canal do globo: 6 e-mails genéricos, nenhum LGPD. Possível e-mail `privacidade@g.globo` não capturado por TLD atípico, ou em subpágina não coletada.
+
+**Pendência operacional:** magazineluiza.com.br falhou na coleta (errors_count=1, capturado pelo D12). Causa a investigar antes do B4 — re-rodar com -v.
+
+**Correção colateral:** `compare_to_ground_truth.py` ganhou leitura robusta de encoding (utf-8-sig → cp1252 → latin-1) e detecção de delimitador (`;` do Excel BR vs `,`), pois o CSV salvo pelo Excel brasileiro vinha em cp1252 com separador ponto-e-vírgula.
+
+---
+
+## 15. Fechamento do pré-piloto B3.5 — refinamentos C/D/E/F (20/05/2026)
+
+**Resultado final (comparison_v3, n=9 coletados):**
+
+| Variável | F1 inicial → final | Decisão |
+|---|---|---|
+| tem_politica_privacidade | 0,800 → **1,000** | Fechada. Refinamentos A+B validados em produção. |
+| tem_banner_cookies | 0,875 → 0,857 | 2 FP reais (nubank, serpro) → B7 (detecção de visibilidade). |
+| tem_canal_titular | 0,769 → 0,769 | 3 FN heterogêneos → B7 (varrer subpáginas de política por âncora/email). |
+
+**Refinamentos aplicados e validados nesta rodada:**
+
+- **C** (`filesystem_repo.py`): nome de subpágina indexado `sub_NNN.html` + `_index.json`. Corrige crash MAX_PATH do Windows (globo.com tinha slug de notícia >100 chars). globo recuperado: n subiu de 8 para 9.
+- **D** (`_subpage.py`): path-blockers (`/noticia/`, `/blog/`, `.ghtml`, etc.) descartam conteúdo editorial que casava "privacidade" por acaso no slug. Resolve a causa-raiz do FP+crash do globo.
+- **E** (`http_fetcher.py`): robots.txt 4xx→allow-all, 5xx→disallow, conforme RFC 9309 §2.3.1.4 (KOSTER et al., 2022). PDF da RFC arquivado em Artigos/. magazineluiza deixou de abortar por robots.
+- **F1** (protocolos): `escalate_if` do http_simples ganhou `exception: FetchError`. Sites com anti-bot que retornam 403 no GET (Akamai bloqueando httpx por TLS fingerprint) agora escalam ao PlaywrightFetcher (Chromium real) em vez de falhar. RobotsDisallowedError continua abortando — validado que abort_on tem precedência sobre escalate_if.
+
+**Diagnóstico do magazineluiza:** após E, deixou de abortar por robots, mas o GET da home retorna 403 (Akamai anti-bot, X-SEC-TRIGGERED). No v3 o chain ainda não escalava (faltava F1). Com F1, passará a tentar o Playwright. Confiança média de que o Playwright passe (Akamai avançado detecta headless); se falhar, o site vai para o buffer do B4 — comportamento esperado e documentado (cf. nota 9).
+
+**Veredito:** o pré-piloto cumpriu o objetivo de filtro de qualidade — pegou 3 bugs reais (crash MAX_PATH, robots conservador demais, ausência de escalonamento por anti-bot) que teriam causado perda silenciosa de sites no B4 (n=384). política saltou para F1=1,0. banner e canal têm refinamentos identificados e priorizados para B7, sem overfit a n=10.
+
+**Parâmetros confirmados para o B4 (piloto n=50):**
+- Estratificação **40 corporativos + 10 governamentais** (sobre-representação do estrato governamental; objetivo = panorama geral, não comparação de estratos).
+- Fonte única: Tranco List top-1M filtrada por `.br`; estratos por sufixo `.gov.br`. Descer no ranking até obter governamentais suficientes.
+- Buffer 60 mantendo proporção 40/10 (48 corp + 12 gov).
+- Seleção das 50 efetivas **por estrato** (40 corp + 10 gov que coletarem primeiro), pós-processada do SQLite.
+- Seed de amostragem: 20260520.
