@@ -69,6 +69,15 @@ Thumbs.db
 
 # Confere
 type .gitignore
-# Resultados de scripts de smoke test (gerados por execução manual)
+# Resultados de scripts de smoke test (gerados por execuï¿½ï¿½o manual)
 data/smoke_*/
 data/tranco_*/
+
+# Dados de execucao do pipeline (coleta piloto, pre-piloto, runs) â€” regeneraveis,
+# nao versionar (tar.gz de evidencias, SQLite, screenshots, logs UTF-16)
+data/b4/
+data/prepilot/
+data/run/
+
+# Scripts temporarios de consulta ad-hoc
+_query.py

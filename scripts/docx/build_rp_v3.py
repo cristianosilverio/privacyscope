@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Constrói o documento Resultados Preliminares V2 a partir do template oficial.
+Constrói o documento Resultados Preliminares V3 a partir do template oficial.
 
-V2 (19/05/2026): pós-implementação do MVP (B3 concluído).
-Mudanças relativas ao V1:
-  - Verbos no passado em Implementação
-  - URL do GitHub publico no texto
-  - Subseção "Composicao de plugins via registry"
-  - Tabela 1 atualizada (cookies_set agora reflete cookies_by_phase)
-  - Resultados: subsecao "Validacao empirica" + Tabela 2 com smoke C3
-  - Cronograma atualizado nas Consideracoes Finais
+V3 (21/05/2026): pós-coleta piloto B4 (n=49). Rota A.
+Mudanças relativas ao V2:
+  - Resumo menciona resultados da piloto
+  - REMOVIDO smoke C3 (Tabela 2 n=5), substituído pela piloto n=49
+  - Nova subseção "Coleta piloto: composição e cobertura" (attrition ~17%)
+  - Nova Tabela: frequências da piloto por variável e estrato
+  - Nova Tabela: métricas de validação do pré-piloto (n=9/10)
+  - Justificativa explícita do n=384 (fórmula + cálculo + ressalvas; Cochran 1977)
+  - Considerações Finais atualizadas com resultados e caminho à validação formal
 
 Preserva: cabecalho USP/ESALQ, paginacao, margens, header fix automatico.
 """
@@ -23,7 +24,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 TEMPLATE = "/sessions/peaceful-lucid-edison/mnt/TCC/Estrutura do TCC/Template Resultados Preliminares_PT (251, 252).docx"
-OUTPUT   = "/sessions/peaceful-lucid-edison/mnt/TCC/Resultados Preliminares - Cristiano Gouveia Silverio - V2.docx"
+OUTPUT   = "/sessions/peaceful-lucid-edison/mnt/TCC/Resultados Preliminares - Cristiano Gouveia Silverio - V3.docx"
 FIG1     = "/sessions/peaceful-lucid-edison/mnt/TCC/PrivacyScope/docs/figuras/figura1_arquitetura.png"
 
 shutil.copy(TEMPLATE, OUTPUT)
@@ -361,10 +362,23 @@ p("O universo amostral é constituído por domínios ativos sob o TLD .br, restr
 
 p("A amostragem é estratificada em dois estratos definidos pelo sufixo do domínio: governamental (``.gov.br``) e empresarial "
 "(demais domínios sob o TLD .br). O tamanho-alvo da amostra final foi dimensionado pela fórmula clássica de estimação de "
-"proporções para população infinita, considerando nível de confiança de 95%, margem de erro de 5% e estimativa conservadora "
-"p̂ = 0,50, resultando em n ≈ 384 unidades. Para a coleta piloto reportada nesta etapa adotou-se n = 50, com alocação de 40 "
-"unidades ao estrato empresarial e 10 ao estrato governamental, extraídas por amostragem aleatória simples dentro de cada "
-"estrato a partir de semente fixa (para reprodutibilidade).")
+"proporções para população grande (COCHRAN, 1977), n = z²·p·(1−p)/E², em que z é o escore normal correspondente ao nível de "
+"confiança, p a proporção esperada e E a margem de erro absoluta. Adotando-se nível de confiança de 95% (z = 1,96), margem de "
+"erro de 5% (E = 0,05) e estimativa conservadora p = 0,50 — valor que maximiza a variância e, portanto, o tamanho de amostra "
+"requerido na ausência de conhecimento prévio das proporções —, obtém-se n = (1,96² × 0,50 × 0,50) / 0,05² ≈ 384 unidades. "
+"Como o universo de domínios .br ativos é da ordem de milhões, a correção para população finita é desprezível, mantendo-se o "
+"tamanho em torno de 384. Para a coleta piloto reportada nesta etapa adotou-se n = 50 (efetivamente 49 coletáveis, conforme "
+"detalhado adiante), com alocação de 40 unidades ao estrato empresarial e 10 ao governamental, extraídas por amostragem "
+"aleatória simples dentro de cada estrato a partir de semente fixa, para reprodutibilidade.")
+
+p("Três delimitações do dimensionamento merecem registro explícito. Primeiro, o valor de 384 dimensiona a estimativa de uma "
+"proporção global com margem de ±5%; estimativas separadas por estrato com a mesma precisão exigiriam aproximadamente esse "
+"número em cada estrato. Como o objetivo do trabalho é o panorama geral, e não a comparação inferencial entre estratos, a "
+"amostra global de 384 é suficiente. Segundo, a adoção de p = 0,50 é deliberadamente conservadora. Terceiro, e mais relevante "
+"para os limites de generalização: o quadro amostral é a Tranco List filtrada por .br — isto é, domínios com popularidade "
+"mensurável —, e não a totalidade dos domínios .br registrados, parte expressiva dos quais se encontra inativa ou estacionada. "
+"As estimativas produzidas são, portanto, válidas para o universo de sítios .br ativos e com tráfego relevante, e não devem "
+"ser extrapoladas indiscriminadamente para o conjunto de todos os domínios registrados sob o TLD nacional.")
 
 p("Cumpre registrar, por transparência metodológica, que esta alocação não é proporcional ao peso populacional dos estratos. "
 "O estrato governamental representa fração ínfima do universo de domínios .br, de modo que a alocação estritamente proporcional "
@@ -524,105 +538,146 @@ p("Os Resultados Preliminares consolidados até o fechamento desta versão compr
 "incluindo as interfaces abstratas das seis camadas, o protocolo declarativo YAML, o registry de plugins e a documentação técnica "
 "versionada no repositório público (https://github.com/cristianosilverio/privacyscope). O segundo conjunto, de natureza operacional, "
 "compreende a implementação concluída do MVP funcional do pipeline em linguagem Python, disponibilizado como pacote instalável e "
-"acessível por interface de linha de comando, com testes de fumaça (smoke tests) executados em ambiente real e cadeia de custódia "
+"acessível por interface de linha de comando, com execuções de teste em ambiente real e cadeia de custódia "
 "das evidências validada por hash criptográfico em cascata. O terceiro conjunto, de natureza empírica preliminar, apresenta os "
 "primeiros resultados quantitativos da aplicação do pipeline sobre sites institucionais brasileiros, ainda em escala reduzida.")
 
-subheading("Validação empírica do pipeline (smoke C3, n = 5)")
+subheading("Coleta piloto: composição e cobertura da amostra")
 
-p("Para validar a operação ponta-a-ponta do pipeline antes da execução da coleta piloto formal, foi conduzido um teste de fumaça em "
-"cinco sites institucionais brasileiros, selecionados por diversidade vertical: dois portais governamentais de regulação e "
-"administração geral (gov.br/anpd e gov.br), um portal governamental de tecnologia (serpro.gov.br), um portal comercial de mídia "
-"(uol.com.br) e um portal comercial de comércio eletrônico (mercadolivre.com.br). A execução completa do pipeline, governada pelo "
-"protocolo declarativo, produziu cinco pacotes de evidências brutas com hash SHA-256 registrado em manifest auditado em cascata, "
-"e quinze observações estruturadas (cinco sites × três variáveis técnicas determinísticas), persistidas em banco SQLite no formato "
-"longo. A Tabela 2 apresenta os resultados obtidos.")
+p("A coleta piloto foi executada em 20 de maio de 2026 sobre uma lista de 59 domínios candidatos — 48 do estrato empresarial e "
+"11 do governamental —, gerada por amostragem aleatória estratificada com semente fixa a partir da Tranco List filtrada por .br. "
+"Do conjunto de candidatos, 49 domínios (39 empresariais e 10 governamentais) foram coletados com sucesso, constituindo a amostra "
+"efetiva analisada nesta etapa. Os dez domínios não coletados distribuíram-se em quatro causas, todas registradas na trilha de "
+"auditoria do framework: seis por não resolução de DNS (domínios outrora ranqueados, atualmente inativos), dois por proibição "
+"explícita no arquivo robots.txt — respeitada pelo coletor —, um por recusa de conexão e um por certificado TLS inválido. Esta "
+"última ocorrência, observada em um portal estadual de saúde, constitui em si um achado de conformidade relevante: um sítio "
+"público que trata dados sensíveis apresentando cadeia de certificação inválida. A taxa de atrito observada (aproximadamente 17%) "
+"é coerente com a rotatividade de domínios característica de rankings de popularidade da Web e fundamenta empiricamente a adoção "
+"de uma margem de candidatos excedentes no dimensionamento operacional da coleta.")
 
-caption("Tabela 2. Resultados do teste de fumaça do pipeline (n = 5 sites, três variáveis determinísticas)", before=4, after=2)
+p("A amostra efetiva (n = 49) é composta majoritariamente por sítios de cauda longa de popularidade — comportamento esperado em "
+"amostragem aleatória voltada ao panorama geral, que reflete a composição real do tecido digital brasileiro, e não apenas seus "
+"portais mais proeminentes. A Tabela 2 apresenta as frequências observadas das três variáveis técnicas determinísticas, no "
+"conjunto e por estrato.")
 
-table2 = doc.add_table(rows=1, cols=5)
-table2.style = "Table Grid"
-hdr2 = table2.rows[0].cells
-for i, txt in enumerate(["Site", "Banner de cookies", "Política de privacidade", "Canal do titular", "Sinal predominante (banner)"]):
-    hdr2[i].text = ""
-    par = hdr2[i].paragraphs[0]
+caption("Tabela 2. Frequência de presença das variáveis técnicas na coleta piloto (n = 49)", before=4, after=2)
+
+freq_table = doc.add_table(rows=1, cols=4)
+freq_table.style = "Table Grid"
+hdrf = freq_table.rows[0].cells
+for i, txt in enumerate(["Variável técnica", "Total (n = 49)", "Governo (n = 10)", "Empresa (n = 39)"]):
+    hdrf[i].text = ""
+    par = hdrf[i].paragraphs[0]
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
     par.paragraph_format.line_spacing = 1.0
     r = par.add_run(txt)
     _set_run(r, bold=True, size=10)
 
-smoke_rows = [
-    ("gov.br/anpd",       "Sim (conf. 0,65)", "Sim (conf. 0,95)", "Sim (conf. 0,95)", "estrutural + léxico"),
-    ("gov.br (raiz)",     "Sim (conf. 0,95)", "Sim (conf. 0,95)", "Não (conf. 0,95)", "estrutural + léxico"),
-    ("serpro.gov.br",     "Sim (conf. 0,95)", "Sim (conf. 0,95)", "Não (conf. 0,95)", "estrutural + léxico"),
-    ("uol.com.br",        "Sim (conf. 0,95)", "Não (conf. 0,95)", "Não (conf. 0,95)", "vendor (OneTrust)"),
-    ("mercadolivre.com.br","Sim (conf. 0,95)","Não (conf. 0,95)", "Não (conf. 0,95)", "estrutural + léxico"),
+freq_rows = [
+    ("tem_banner_cookies", "79,6% (39)", "80,0% (8)", "79,5% (31)"),
+    ("tem_politica_privacidade", "67,3% (33)", "60,0% (6)", "69,2% (27)"),
+    ("tem_canal_titular", "22,4% (11)", "40,0% (4)", "17,9% (7)"),
 ]
-for row in smoke_rows:
-    cells = table2.add_row().cells
+for row in freq_rows:
+    cells = freq_table.add_row().cells
     for i, txt in enumerate(row):
         cells[i].text = ""
         par = cells[i].paragraphs[0]
-        par.alignment = WD_ALIGN_PARAGRAPH.LEFT if i in (0, 4) else WD_ALIGN_PARAGRAPH.CENTER
+        par.alignment = WD_ALIGN_PARAGRAPH.LEFT if i == 0 else WD_ALIGN_PARAGRAPH.CENTER
         par.paragraph_format.line_spacing = 1.0
         r = par.add_run(txt)
         _set_run(r, size=10)
 
-caption("Fonte: Elaborada pelo autor a partir da execução do PrivacyScope em 19 de maio de 2026", before=2, after=10)
+caption("Fonte: Elaborada pelo autor a partir da coleta de 20 de maio de 2026", before=2, after=10)
 
-p("Os resultados da Tabela 2 fornecem evidências qualitativas relevantes para a defensibilidade do pipeline. A detecção de banner "
-"de cookies identificou corretamente a presença do mecanismo nos cinco sites, com nível de confiança máximo (0,95) em quatro deles, "
-"e nível intermediário (0,65) no portal da ANPD em decorrência de falha operacional na tentativa automatizada de interação com o "
-"banner — um caso explicitamente capturado pelo desenho do framework, que distingue \"banner detectado e interagível\" de \"banner "
-"detectado e não interagível\" por meio da gradação do nível de confiança. A detecção do canal do titular foi positiva apenas no "
-"portal da ANPD, único caso da amostra em que o endereço eletrônico institucional do encarregado de proteção de dados (\"encarregado@\") "
-"foi identificado conjuntamente com uma subpágina dedicada ao exercício de direitos, configurando o critério de confiança máxima. "
-"A detecção de política de privacidade resultou positiva nos três portais governamentais e negativa em uol.com.br e "
-"mercadolivre.com.br — observação relevante que indica limitação da heurística atual de categorização de subpáginas, motivando "
-"refinamento documentado nas notas técnicas do repositório.")
+p("A presença de banner de cookies mostrou-se quase universal (79,6%) e praticamente idêntica entre os estratos, indicando que a "
+"comunicação sobre o uso de cookies já constitui prática consolidada entre os sítios brasileiros ativos. A política de privacidade "
+"esteve presente em cerca de dois terços da amostra (67,3%), com leve predominância do estrato empresarial. O canal de atendimento "
+"ao titular foi a variável de menor incidência (22,4%), e o único item em que o estrato governamental superou nitidamente o "
+"empresarial (40,0% contra 17,9%), resultado coerente com a obrigação, mais diretamente cobrada do setor público, de designar "
+"encarregado pelo tratamento de dados pessoais (art. 41 da Lei nº 13.709/2018). Quanto às plataformas de gestão de consentimento, "
+"foram identificadas assinaturas de dois fornecedores comerciais distintos no conjunto (CookieConsent, em quatro sítios, e "
+"Quantcast Choice, em dois), evidência de adoção de soluções estabelecidas de mercado por parte dos sítios brasileiros.")
 
-p("Um achado de particular interesse para a discussão metodológica refere-se à identificação positiva, em uol.com.br, do uso da "
-"plataforma OneTrust como Consent Management Platform (CMP) — um dos vendors comerciais com signatures DOM identificáveis "
-"explicitamente cobertos pelo módulo de detecção. Esse achado oferece evidência empírica de que sites brasileiros de grande tráfego "
-"adotam plataformas estabelecidas de gestão de consentimento, em linha com as observações de Pantelic et al. (2022) e Rasaii et al. "
-"(2023) sobre o mercado global de CMPs. Outro achado operacionalmente relevante refere-se ao mercadolivre.com.br, que foi processado "
-"integralmente pela primeira etapa da cadeia de coleta (HttpFetcher, baseado em ``httpx``) em aproximadamente sete segundos, sem "
-"necessidade de escalonamento para o fetcher de renderização JavaScript completa — indicando que o site mantém conteúdo crítico "
-"acessível em HTML estático, comportamento favorável tanto à coleta automatizada quanto à indexação por mecanismos de busca.")
+p("A interpretação dessas frequências deve observar as características de desempenho de cada variável, aferidas na etapa de "
+"validação manual descrita a seguir. A variável de política de privacidade apresentou concordância integral com a avaliação "
+"humana no pré-piloto, conferindo elevada confiança ao valor observado. A variável de banner de cookies, por outro lado, está "
+"sujeita a falsos positivos — marcações residuais de cookies no código sem banner efetivamente exibido —, de modo que a "
+"frequência de 79,6% deve ser lida como limite superior; a gradação do nível de confiança auxilia a calibração, pois dos 39 "
+"positivos apenas 11 foram classificados com confiança alta, distribuindo-se os demais em 15 de confiança média e 13 de confiança "
+"baixa. A variável de canal do titular, inversamente, está sujeita a falsos "
+"negativos (canais situados em páginas não capturadas), de modo que a frequência de 22,4% deve ser lida como limite inferior. "
+"Essas direções de viés, conhecidas, orientam a leitura prudente dos resultados e serão quantificadas com precisão na validação "
+"formal prevista para a versão final.")
 
-subheading("Próximas etapas e validação manual prévia (n = 10)")
+subheading("Validação preliminar do desempenho (pré-piloto, n = 9)")
 
-p("Em complemento ao teste de fumaça reportado acima, foi conduzida etapa intermediária de validação por confronto manual, com "
-"amostra dimensionada para n = 10 sites e abrangendo cinco portais governamentais (gov.br/anpd, serpro.gov.br, gov.br raiz, portal "
-"da Receita Federal e Tribunal de Contas da União) e cinco portais comerciais (uol.com.br, globo.com, mercadolivre.com.br, "
-"magazineluiza.com.br e nubank.com.br). Para cada um dos sites, a rotulagem manual das três variáveis determinísticas foi realizada "
-"em navegador limpo (sem cookies de sessão), aplicando os mesmos critérios formais especificados no protocolo. A comparação "
-"resultante entre detecção automatizada e rotulagem manual produziu matriz de confusão 2×2 por variável, com métricas de precisão, "
-"revocação, medida F1 e coeficiente kappa de Cohen — registradas no apêndice técnico do repositório. Ressalva-se que, com n = 10, "
-"os intervalos de confiança dessas métricas são deliberadamente amplos: o propósito desta etapa não é fornecer estimativas "
-"estatisticamente robustas, mas identificar classes de erro recorrentes no framework antes da execução da coleta piloto formal, "
-"evitando ajustes excessivos a partir de amostras de baixa potência estatística. As estimativas estatisticamente defensáveis "
-"derivarão da subamostra de validação prevista no delineamento metodológico, com n = 50, nível de confiança de 95% e margem de "
-"erro de 10%.")
+p("Previamente à coleta piloto, conduziu-se etapa de validação por confronto manual sobre subamostra de dez sítios — dos quais "
+"nove foram coletáveis —, abrangendo cinco portais governamentais e cinco empresariais. Para cada sítio, as três variáveis "
+"determinísticas foram rotuladas manualmente em navegador limpo, segundo os mesmos critérios formais do protocolo, e confrontadas "
+"com a detecção automatizada. A Tabela 3 apresenta as métricas de concordância resultantes. Ressalva-se que, com n = 9, os "
+"intervalos de confiança dessas métricas são amplos: o propósito desta etapa foi diagnosticar classes de erro do framework — e "
+"orientar refinamentos — e não fornecer estimativas estatisticamente definitivas, que derivarão da subamostra de validação "
+"formal (n = 50) prevista no delineamento.")
 
-p("Esta etapa de confronto manual cumpriu integralmente seu propósito de filtro de qualidade. A comparação evidenciou, em particular, "
-"falsos negativos da variável de política de privacidade nos portais uol.com.br e mercadolivre.com.br — os mesmos casos observados "
-"no teste de fumaça reportado na Tabela 2 —, decorrentes de uma limitação do vocabulário de detecção de subpáginas, que não "
-"reconhecia rótulos de hyperlink contendo apenas o termo \"Privacidade\" (sem a locução \"política de\"). Identificada a classe de "
-"erro, o vocabulário foi refinado para incorporar tais variações, mantendo-se a etapa subsequente de qualificação por conteúdo como "
-"salvaguarda contra falsos positivos. Após o refinamento, nova execução de confronto manual registrou concordância total entre a "
-"detecção automatizada e a avaliação humana para a variável de política de privacidade. Foram igualmente incorporadas, nesta etapa, "
-"melhorias de robustez da coleta — tratamento de nomes de arquivo extensos, descarte de conteúdo editorial efêmero na seleção de "
-"subpáginas e escalonamento ao coletor com renderização completa diante de bloqueios anti-automação — todas validadas empiricamente. "
-"Esse ciclo de detecção de erro, diagnóstico, correção e revalidação ilustra o caráter iterativo e auditável do desenvolvimento do "
-"framework, e antecede deliberadamente a coleta piloto formal para evitar a propagação de erros sistemáticos a uma amostra maior.")
+caption("Tabela 3. Métricas de concordância entre detecção automatizada e avaliação manual (pré-piloto, n = 9)", before=4, after=2)
 
-p("A execução da coleta piloto formal sobre n = 50 sites, prevista para 28 de maio de 2026, fornecerá as primeiras estatísticas "
-"descritivas de frequência e distribuição das três variáveis determinísticas ao longo dos estratos governamental e empresarial. "
-"A expansão posterior da coleta para n = 384 sites e o treinamento dos classificadores supervisionados (variáveis ``categoria_cookies`` "
-"e ``menciona_lgpd``) sobre o ground truth manual estão programados para o intervalo de 1º a 12 de junho de 2026. As métricas de "
-"desempenho completas e os resultados descritivos consolidados serão incorporados à versão revisada deste documento, prevista "
-"para submissão à plataforma MBX em 16 de junho de 2026.")
+val_table = doc.add_table(rows=1, cols=6)
+val_table.style = "Table Grid"
+hdrv = val_table.rows[0].cells
+for i, txt in enumerate(["Variável técnica", "Acurácia", "Precisão", "Revocação", "F1", "Kappa"]):
+    hdrv[i].text = ""
+    par = hdrv[i].paragraphs[0]
+    par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    par.paragraph_format.line_spacing = 1.0
+    r = par.add_run(txt)
+    _set_run(r, bold=True, size=10)
+
+val_rows = [
+    ("tem_banner_cookies", "0,778", "0,778", "1,000", "0,875", "0,000"),
+    ("tem_politica_privacidade", "1,000", "1,000", "1,000", "1,000", "—"),
+    ("tem_canal_titular", "0,667", "1,000", "0,625", "0,769", "0,270"),
+]
+for row in val_rows:
+    cells = val_table.add_row().cells
+    for i, txt in enumerate(row):
+        cells[i].text = ""
+        par = cells[i].paragraphs[0]
+        par.alignment = WD_ALIGN_PARAGRAPH.LEFT if i == 0 else WD_ALIGN_PARAGRAPH.CENTER
+        par.paragraph_format.line_spacing = 1.0
+        r = par.add_run(txt)
+        _set_run(r, size=10)
+
+caption("Fonte: Elaborada pelo autor. Coeficiente kappa não definido para política por ausência de variância negativa na subamostra", before=2, after=10)
+
+p("A variável de política de privacidade alcançou concordância integral (F1 = 1,000) após o refinamento do vocabulário de detecção "
+"de subpáginas. A variável de banner de cookies registrou revocação plena (1,000) e precisão de 0,778, refletindo os falsos "
+"positivos já discutidos. A variável de canal do titular apresentou precisão plena (1,000) mas revocação de 0,625, confirmando a "
+"tendência a falsos negativos. Os valores baixos do coeficiente kappa, incluindo sua indefinição para a variável de política, "
+"decorrem da composição da subamostra de validação, fortemente concentrada em sítios que de fato possuem os atributos avaliados "
+"(escassez de verdadeiros negativos), o que torna o kappa instável e pouco informativo nesta escala — limitação que será superada "
+"na validação formal, conduzida sobre subamostra de maior diversidade.")
+
+subheading("Refinamento iterativo e próximas etapas")
+
+p("O processo de desenvolvimento adotou um ciclo explícito de detecção de erro, diagnóstico, correção e revalidação, anterior à "
+"coleta piloto, para evitar a propagação de erros sistemáticos à amostra. A etapa de confronto manual evidenciou, em particular, "
+"falsos negativos da variável de política de privacidade — decorrentes de uma limitação do vocabulário de detecção de subpáginas, "
+"que não reconhecia rótulos de hyperlink contendo apenas o termo \"Privacidade\" (sem a locução \"política de\"). Identificada a "
+"classe de erro, o vocabulário foi refinado para incorporar tais variações, preservando-se a etapa subsequente de qualificação "
+"por conteúdo como salvaguarda contra falsos positivos; nova execução de confronto manual registrou então a concordância integral "
+"reportada na Tabela 3. Foram igualmente incorporadas melhorias de robustez da coleta — tratamento de nomes de arquivo extensos, "
+"descarte de conteúdo editorial efêmero na seleção de subpáginas e escalonamento ao coletor com renderização completa diante de "
+"bloqueios anti-automação —, todas validadas empiricamente. Esse caráter iterativo e auditável é central para a defensibilidade "
+"metodológica do framework.")
+
+p("As próximas etapas do trabalho compreendem: a expansão da coleta automatizada para a amostra dimensionada (n ≈ 384, conforme "
+"justificado na seção de amostragem); a constituição de subamostra de validação manual (n = 50, IC 95%, margem de erro de 10%) "
+"para apuração formal das métricas de precisão, revocação, F1 e kappa sobre conjunto de maior diversidade — superando as limitações "
+"de potência estatística da validação preliminar aqui reportada; o treinamento e a avaliação dos classificadores supervisionados "
+"para as variáveis ``categoria_cookies`` e ``menciona_lgpd``; e a análise conceitual-normativa da aderência do framework às "
+"finalidades institucionais da etapa de Monitoramento. Os resultados descritivos consolidados e as métricas de desempenho completas "
+"serão incorporados à versão final deste documento, prevista para submissão em 16 de junho de 2026.")
 
 # ---------------------- CONSIDERAÇÕES FINAIS ---------------------------
 heading("Considerações Finais")
@@ -630,23 +685,22 @@ heading("Considerações Finais")
 p("Os resultados parciais consolidados nesta etapa indicam compatibilidade estrutural entre o framework PrivacyScope e as "
 "finalidades informacionais da etapa de Monitoramento prevista na Resolução CD/ANPD nº 1/2021. A arquitetura desacoplada e "
 "parametrizável, formalizada em interfaces abstratas e governada por protocolo declarativo versionado, permite que critérios "
-"e parâmetros sejam ajustados externamente sem alteração do núcleo do sistema — propriedade verificada empiricamente no teste "
-"de fumaça reportado na Tabela 2 e na execução repetida de variações do protocolo sobre o mesmo conjunto de evidências brutas. "
+"e parâmetros sejam ajustados externamente sem alteração do núcleo do sistema — propriedade verificada empiricamente na coleta "
+"piloto (Tabela 2) e na execução repetida de variações do protocolo sobre o mesmo conjunto de evidências brutas. "
 "A composição modular de plugins, materializada no registry declarativo, sustenta o requisito de extensibilidade frente a "
 "refinamentos futuros, incluindo a incorporação de variáveis técnicas adicionais, fontes amostrais alternativas e classificadores "
 "de aprendizado supervisionado, sem necessidade de refatoração das camadas estruturais.")
 
-p("Os próximos passos do trabalho contemplam quatro frentes interdependentes. A primeira, de natureza empírica, abrange a execução "
-"da coleta piloto sobre n = 50 sites em 28 de maio de 2026, com produção das primeiras estatísticas descritivas de frequência e "
-"distribuição das três variáveis determinísticas. A segunda, de natureza estatística, abrange o cálculo das métricas de desempenho "
-"do pipeline determinístico (precisão, revocação, medida F1, acurácia global e coeficiente kappa de Cohen) sobre subamostra de "
-"validação manual com n = 50, no intervalo de 1º a 12 de junho de 2026. A terceira, de natureza modelística, abrange o treinamento "
-"dos classificadores supervisionados para as variáveis ``categoria_cookies`` e ``menciona_lgpd``, incluindo comparação entre "
-"representação clássica (TF-IDF com regressão logística) e representação contextual (embeddings do modelo BERTimbau). A quarta, de "
-"natureza analítica, abrange a discussão conceitual-normativa da aderência do framework às finalidades institucionais da etapa de "
-"Monitoramento, com particular atenção aos limites legítimos da inferência computacional sobre evidências observáveis e à "
-"preservação da distinção entre evidência técnica e juízo jurídico de conformidade. A versão consolidada do documento, contendo "
-"esses quatro conjuntos de resultados, está prevista para entrega ao orientador em 31 de maio de 2026 e submissão à plataforma "
+p("A coleta piloto realizada permitiu observar, em escala reduzida, indicadores descritivos das práticas de transparência nos "
+"sítios brasileiros ativos: comunicação sobre cookies já consolidada, política de privacidade presente em cerca de dois terços "
+"da amostra, e canal de atendimento ao titular como o elemento de menor incidência — sugerindo que a operacionalização do "
+"exercício de direitos previsto na legislação permanece o aspecto menos maduro entre as organizações analisadas. Tais leituras "
+"são preliminares e condicionadas às características de desempenho de cada detector, conforme discutido. As frentes subsequentes "
+"do trabalho — expansão da coleta à amostra dimensionada, validação formal do desempenho, treinamento dos classificadores "
+"supervisionados e discussão conceitual-normativa da aderência institucional — consolidarão os resultados na versão final do "
+"documento. Preserva-se, ao longo de todo o desenho, a distinção fundamental entre a evidência técnica observável, que o "
+"framework produz, e o juízo jurídico de conformidade, que permanece atribuição da autoridade competente. A versão consolidada "
+"está prevista para entrega ao orientador em 31 de maio de 2026 e submissão à plataforma "
 "MBX em 16 de junho de 2026.")
 
 # ---------------------- REFERÊNCIAS -----------------------------------
@@ -679,9 +733,13 @@ ref("BRASIL. Decreto nº 5.296, de 2 de dezembro de 2004. Regulamenta as Leis n�
 
 ref("BRASIL. Lei nº 13.146, de 6 de julho de 2015. Institui a Lei Brasileira de Inclusão da Pessoa com Deficiência (Estatuto da Pessoa com Deficiência). Diário Oficial da União: Brasília, DF, 7 jul. 2015.")
 
+ref("BRASIL. Conselho Nacional de Saúde. Resolução CNS nº 510, de 7 de abril de 2016. Dispõe sobre as normas aplicáveis a pesquisas em Ciências Humanas e Sociais. Diário Oficial da União: seção 1, Brasília, DF, 24 maio 2016.")
+
 ref("eMAG. 2014. Modelo de Acessibilidade em Governo Eletrônico — versão 3.1. Departamento de Governo Eletrônico, Ministério do Planejamento, Orçamento e Gestão. Brasília, DF.")
 
 ref("CASEY, E. 2011. Digital Evidence and Computer Crime: Forensic science, computers and the internet. 3ed. Academic Press, Waltham, MA, USA.")
+
+ref("COCHRAN, W. G. 1977. Sampling Techniques. 3ed. John Wiley & Sons, New York, NY, USA.")
 
 ref("DABROWSKI, A.; MERZDOVNIK, G.; ULLRICH, J.; SENDERA, G.; WEIPPL, E. 2019. Measuring cookies and web privacy in a post-GDPR world. In: Privacy Technologies and Policy. Springer, Cham, Switzerland.")
 
