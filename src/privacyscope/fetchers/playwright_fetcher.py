@@ -630,6 +630,7 @@ class PlaywrightFetcher(PageFetcher):
         network_log: list[dict] = []
         headers_by_url: dict[str, dict[str, str]] = {}
         html_pages: dict[str, bytes] = {}
+        pre_consent_html: str = ""
         consent_actions: list[dict] = []
         phase_screenshots: dict[str, bytes] = {}
         cookies_pre: list[dict] = []
@@ -685,6 +686,13 @@ class PlaywrightFetcher(PageFetcher):
                 )
                 if scr_pre:
                     phase_screenshots["pre_consent"] = scr_pre
+                # HTML pre-consent: banner ainda presente no DOM. Capturado
+                # antes do accept (refinamento B4) para recuperar links internos
+                # do banner (politica/canal) que somem apos a dispensa do banner.
+                try:
+                    pre_consent_html = await page.content()
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"pre_consent html: {type(e).__name__}: {e}")
 
                 # === FASE 2 — Tentar accept ===
                 accept_action = await self._phase_attempt_accept(page, cfg)
@@ -700,10 +708,23 @@ class PlaywrightFetcher(PageFetcher):
                 # === HTML da raiz (pós-consent — DOM mais maduro) ===
                 root_html = await page.content()
                 html_pages["/"] = root_html.encode("utf-8")
+                # Persiste o HTML pre-consent (auditoria/cadeia de custodia) sob
+                # chave reservada; o repositorio o serializa como subpagina.
+                if pre_consent_html:
+                    html_pages["/__pre_consent"] = pre_consent_html.encode("utf-8")
 
                 # === Extração de subpáginas pós-consent ===
-                subpage_selection = await self._extract_subpages_from_page(
-                    page, domain.url, cfg
+                # UNIAO pre + pos-consent: pre-consent traz links DENTRO do
+                # banner (ex.: politica linkada no aviso de cookies) que somem
+                # do DOM apos a dispensa; extract_subpage_candidates deduplica
+                # por URL e respeita o teto global.
+                combined_html = ((pre_consent_html or "") + root_html).encode("utf-8")
+                subpage_selection = extract_subpage_candidates(
+                    combined_html,
+                    base_url=domain.url,
+                    categories=cfg["subpage_categories"],
+                    max_per_category=cfg["max_per_category"],
+                    max_total=cfg["max_total_subpages"],
                 )
 
                 # === Coleta das subpáginas no mesmo context ===

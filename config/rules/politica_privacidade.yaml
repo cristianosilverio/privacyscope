@@ -1,0 +1,32 @@
+# Config externa do teste tem_politica_privacidade (rules_file no protocol.yaml;
+# carregada pelo orquestrador para params). Apenas DADO (limiares e lista de
+# keywords de plausibilidade). LOGICA/REGEX (vocabulario de PATH, padroes fracos,
+# deteccao de PDF) permanece no codigo. Fallback: *_DEFAULT em politica_privacidade.py.
+
+min_policy_size_bytes: 500
+min_keywords_for_high: 3
+
+# Keywords que qualificam uma pagina como POLITICA real (vs. mencao casual).
+# Fonte: Javed & Sajid (2024) + artigos da LGPD. (Sensibilidade B4: nao load-bearing.)
+policy_plausibility_keywords:
+  - lgpd
+  - "lei geral de proteção de dados"
+  - "lei nº 13.709"
+  - "13.709"
+  - base legal
+  - bases legais
+  - finalidade
+  - compartilhamento
+  - retenção
+  - retencao
+  - titular dos dados
+  - titular dos seus dados
+  - encarregado
+  - anpd
+  - autoridade nacional
+  - direitos do titular
+  - consentimento
+  - tratamento de dados
+  - dados pessoais
+  - transferência internacional
+  - transferencia internacional

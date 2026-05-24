@@ -1,0 +1,17 @@
+# Config externa do teste tem_banner_cookies (rules_file no protocol.yaml;
+# carregada pelo orquestrador para params). Apenas DADO (limiares e listas de
+# palavras/tags/dominios). LOGICA/REGEX (lexico, assinaturas de vendor, classes
+# de ocultacao) permanece no codigo. Fallback: *_DEFAULT em banner_cookies.py.
+
+# Profundidade maxima de ancestrais inspecionada no filtro de visibilidade.
+max_ancestor_depth: 6
+
+# Tags sem renderizacao visual — nunca constituem banner.
+nonvisual_tags: [script, style, link, meta, noscript, template, head, title, base]
+
+# Vendors detectaveis apenas por dominio de loader (sem elemento de banner).
+vendor_text_only: [termly.io, truste.com]
+
+# Vocabulario do CONTAINER nomeado de banner (palavras; o regex e montado no
+# codigo). DERIVADO da piloto B4 — provisorio, a validar em B8/B9.
+container_vocab: [cookie, consent, lgpd, privacid, privacidade, privacy, gdpr]

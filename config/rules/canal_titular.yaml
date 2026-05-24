@@ -1,0 +1,44 @@
+# Config externa do teste tem_canal_titular (referenciada em config/protocol.yaml
+# via rules_file; carregada pelo orquestrador para params). Contem apenas DADOS
+# (listas/limiares) — a logica e as regex permanecem no codigo (decisao B4:
+# externalizar dado, nao logica). Capturada no hash do protocolo (rastreabilidade).
+
+# Limiar minimo de bytes para considerar uma subpagina de canal/encarregado plausivel.
+min_subpage_bytes: 500
+
+# Keywords que confirmam que a subpagina trata de exercicio de direitos do titular.
+canal_plausibility_keywords:
+  - titular
+  - direito
+  - lgpd
+  - exercer
+  - exercicio
+  - exercício
+  - encarregado
+  - dpo
+  - solicitacao
+  - solicitação
+  - requisicao
+  - requisição
+  - fale conosco
+
+# Provedores de infraestrutura/SaaS: e-mail de DPO nesses dominios e do
+# PROCESSADOR, nao do CONTROLADOR (ex.: dpo@cloudflare.com em boilerplate de CDN).
+# LIMITACAO: lista empirica e incompleta (piloto B4: so cloudflare apareceu).
+# Ideal futuro (B7+): allowlist de dominios do controlador por site.
+provider_email_blocklist:
+  - cloudflare.com
+  - cloudfront.net
+  - akamai.com
+  - akamaihd.net
+  - fastly.com
+  - amazonaws.com
+  - wordpress.com
+  - automattic.com
+  - shopify.com
+  - wix.com
+  - wixpress.com
+  - squarespace.com
+  - hubspot.com
+  - zendesk.com
+  - salesforce.com

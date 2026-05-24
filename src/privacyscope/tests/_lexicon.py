@@ -39,12 +39,27 @@ COOKIE_LEXICON_PT_EN: list[str] = [
 ]
 
 # Sinais estruturais de banner (atributos/aria/role tipicamente usados).
+# NOTA (refinamento B4): estes sinais sao GENERICOS (role=dialog casa qualquer
+# modal — newsletter, login, busca). A partir do refinamento pos-piloto, NAO
+# bastam isoladamente para decidir positivo no banner_cookies; servem apenas
+# para compor o audit_trail. O gatilho estrutural positivo passou a exigir
+# COOKIE_CONTAINER_HINTS + lexico em janela de proximidade.
 COOKIE_STRUCTURAL_HINTS: list[str] = [
     r'role\s*=\s*["\']dialog["\']',
     r'aria-modal\s*=\s*["\']true["\']',
     r'aria-label[^>]*(cookie|consent|privacidad)',
     r'id\s*=\s*["\'][^"\']*cookie[^"\']*["\']',
     r'class\s*=\s*["\'][^"\']*cookie[^"\']*["\']',
+]
+
+# Container NOMEADO de banner: id/class cujo nome remete a cookie/consentimento/
+# privacidade/LGPD. Sinal estrutural FORTE — distinto de COOKIE_STRUCTURAL_HINTS
+# (role=dialog generico). Introduzido no refinamento pos-piloto B4: o gatilho
+# positivo textual do banner_cookies passou a ser "container nomeado + termo do
+# lexico de cookies numa janela de proximidade", elevando a precisao de 0,56
+# para 0,83 na piloto sem perda relevante de recall.
+COOKIE_CONTAINER_HINTS: list[str] = [
+    r'(?:id|class)\s*=\s*["\'][^"\']*(?:cookie|consent|lgpd|privacid|privacidade|privacy|gdpr)[^"\']*["\']',
 ]
 
 
@@ -104,6 +119,7 @@ CANAL_TITULAR_ANCHORS: list[str] = [
 __all__ = [
     "COOKIE_LEXICON_PT_EN",
     "COOKIE_STRUCTURAL_HINTS",
+    "COOKIE_CONTAINER_HINTS",
     "POLICY_PLAUSIBILITY_KEYWORDS",
     "CANAL_TITULAR_ANCHORS",
 ]

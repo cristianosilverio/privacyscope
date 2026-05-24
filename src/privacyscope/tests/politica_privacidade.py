@@ -1,44 +1,46 @@
 """
 VariableTest: tem_politica_privacidade.
 
-Estratégia em duas camadas (decisão D7):
+Estrategia em duas camadas (decisao D7), refinada apos a piloto B4.
 
-    1. **Confia no fetcher** para extração inicial de candidatos: consulta
-       ``evidence.subpage_selection["politica_privacidade"]`` (já populado por
-       ``fetchers/_subpage.py`` com 11 padrões cobrindo "política", "aviso",
-       "notificação", "declaração", "portal", "central" de privacidade).
+    1. Confia no fetcher para extracao de candidatos:
+       ``evidence.subpage_selection["politica_privacidade"]`` (uniao pre+pos
+       consentimento).
+    2. Qualifica com discriminadores (refinamento B4):
+         - Conteudo FORTE: subpagina baixada (>= min_size bytes) com >=
+           min_keywords keywords distintas -> high. Qualifica sempre.
+         - PDF: link de politica em PDF (.pdf) com path/titulo de politica ->
+           medium.
+         - Conteudo FRACO (1..min_keywords-1): conta so se o path/titulo do link
+           for de politica (nao termo isolado).
+         - Nao baixado e nao-PDF: NAO conta.
+    3. Sem fallback por regex no HTML raiz (removido no refinamento B4).
 
-    2. **Qualifica a evidência** com filtros próprios para reduzir falsos
-       positivos:
-         - Subpágina foi efetivamente baixada (``html_pages[url]`` existe)?
-         - Conteúdo plausível (>= 500 bytes)?
-         - Contém >= 3 keywords distintas de LGPD/privacidade?
+Refinamento B4 (n=49): precisao 0,875 -> 0,966; recall 0,966; kappa 0,776 ->
+0,913. (n=49: revalidar em held-out B8.)
 
-       Mitigação direta do falso positivo documentado em
-       ``docs/notas_de_refinamento.md`` item 1 ("Denúncia LGPD" no anpd
-       caindo em política — uma página de denúncia tem poucas keywords
-       estruturais de política, ficando em ``confidence_level: low``).
+v0.2.0 -> v0.2.1: CONFIG EXTERNA dos parametros de DADO (decisao B4 —
+    externalizar dado, manter logica/regex no codigo). Vem de ``params``
+    (carregados pelo orquestrador de config/rules/politica_privacidade.yaml):
+    min_policy_size_bytes, min_keywords_for_high, policy_plausibility_keywords.
+    O vocabulario de PATH (_POLICY_PATH_RX) e os padroes fracos sao REGEX e
+    permanecem no codigo. Fallback para os *_DEFAULT se faltar (params vazio ==
+    v0.2.0).
 
-    3. **Fallback** quando subpage_selection vazio: regex em ``html_root``
-       buscando link explícito.
-
-Fundamentação:
-    - Javed; Sajid (2024): systematic review de literatura sobre políticas
-      de privacidade — define termos canônicos para detecção textual.
-    - Vorster; Da Veiga (2023): guidelines para análise estrutural de
-      políticas de privacidade em sites comerciais.
+Fundamentacao:
+    - Javed; Sajid (2024); Vorster; Da Veiga (2023).
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any, ClassVar
+from urllib.parse import urlparse
 
 from privacyscope.core.interfaces import VariableTest
 from privacyscope.core.types import RawEvidence, VariableResult, utc_now
 from privacyscope.tests._helpers import (
     CONFIDENCE_HIGH,
-    CONFIDENCE_LOW,
     CONFIDENCE_MEDIUM,
     CONFIDENCE_UNKNOWN,
     confidence_to_float,
@@ -47,20 +49,37 @@ from privacyscope.tests._helpers import (
 from privacyscope.tests._lexicon import POLICY_PLAUSIBILITY_KEYWORDS
 
 
-# Threshold mínimo de bytes para considerar uma página de política plausível.
-# Páginas reais costumam ter milhares de bytes; 500 é piso conservador para
-# detectar shells SPA ou redirects mal formados.
+# ---- DEFAULTS (fallback) — fonte editavel: config/rules/politica_privacidade.yaml ----
 MIN_POLICY_SIZE_BYTES = 500
-
-# Mínimo de keywords distintas para confidence high.
 MIN_KEYWORDS_FOR_HIGH = 3
+
+# LOGICA/REGEX (permanece no codigo):
+_POLICY_PATH_RX = re.compile(
+    r"(privacid|privacy|gdpr|lgpd|prote\w*[-_]?(?:de[-_]?)?dados|"
+    r"dados[-_]?pessoais|polit\w*[-_]?de[-_]?dados)",
+    re.IGNORECASE,
+)
+_WEAK_LINK_PATTERNS = frozenset({r"\bprivacidade\b", r"\bprivacy\b", r"\blgpd\b"})
+
+
+def _is_pdf(url: str) -> bool:
+    return url.lower().split("?")[0].split("#")[0].endswith(".pdf")
+
+
+def _policy_like(url: str, matched_pattern: str | None) -> bool:
+    path = urlparse(url).path or "/"
+    if _POLICY_PATH_RX.search(path):
+        return True
+    if matched_pattern and matched_pattern not in _WEAK_LINK_PATTERNS:
+        return True
+    return False
 
 
 class PoliticaPrivacidadeTest(VariableTest):
-    """Detecta presença de política/aviso/termo de privacidade."""
+    """Detecta presenca de politica/aviso/termo de privacidade."""
 
     name: ClassVar[str] = "politica_privacidade"
-    version: ClassVar[str] = "0.1.0"
+    version: ClassVar[str] = "0.2.1"
     variable_name: ClassVar[str] = "tem_politica_privacidade"
 
     def evaluate(
@@ -71,9 +90,22 @@ class PoliticaPrivacidadeTest(VariableTest):
         protocol_version: str,
         run_id: str,
     ) -> VariableResult:
-        del params  # MVP: sem params customizáveis
+        params = params or {}
+        try:
+            min_size = int(params.get("min_policy_size_bytes", MIN_POLICY_SIZE_BYTES))
+            if min_size < 1:
+                min_size = MIN_POLICY_SIZE_BYTES
+        except (TypeError, ValueError):
+            min_size = MIN_POLICY_SIZE_BYTES
+        try:
+            kw_high = int(params.get("min_keywords_for_high", MIN_KEYWORDS_FOR_HIGH))
+            if kw_high < 1:
+                kw_high = MIN_KEYWORDS_FOR_HIGH
+        except (TypeError, ValueError):
+            kw_high = MIN_KEYWORDS_FOR_HIGH
+        kw_list = params.get("policy_plausibility_keywords") or POLICY_PLAUSIBILITY_KEYWORDS
+        keywords = [str(k).strip().lower() for k in kw_list if str(k).strip()]
 
-        # 1) Consulta subpage_selection (fonte primária)
         candidates = evidence.subpage_selection.get("politica_privacidade", [])
 
         value: bool = False
@@ -84,70 +116,61 @@ class PoliticaPrivacidadeTest(VariableTest):
         matched_against: str | None = None
         subpage_size: int | None = None
         keyword_hits: list[str] = []
+        best_priority = 0
 
-        if candidates:
-            # Há pelo menos um candidato — tenta qualificar
-            for cand in candidates:
-                url = cand.get("url", "")
-                if not url:
-                    continue
-                # Procura HTML correspondente em html_pages.
-                # _subpage.py guarda URLs absolutas; html_pages tem paths
-                # (e.g. "/politica-privacidade"). Tenta ambas as formas.
-                body = self._find_body_for_url(evidence.html_pages, url)
-                if body and len(body) >= MIN_POLICY_SIZE_BYTES:
-                    text_lower = safe_decode(body).lower()
-                    hits = [kw for kw in POLICY_PLAUSIBILITY_KEYWORDS if kw in text_lower]
-                    if len(hits) >= MIN_KEYWORDS_FOR_HIGH:
-                        value = True
-                        confidence_label = CONFIDENCE_HIGH
-                        source = "subpage_selection+content_qualified"
-                        matched_url = url
-                        matched_pattern = cand.get("matched_pattern")
-                        matched_against = cand.get("matched_against")
-                        subpage_size = len(body)
-                        keyword_hits = hits[:10]
-                        break
-                    elif hits:
-                        # Página existe, alguma keyword bate, mas não atinge 3
-                        if confidence_label == CONFIDENCE_UNKNOWN:
-                            value = True
-                            confidence_label = CONFIDENCE_MEDIUM
-                            source = "subpage_selection+content_weak"
-                            matched_url = url
-                            matched_pattern = cand.get("matched_pattern")
-                            matched_against = cand.get("matched_against")
-                            subpage_size = len(body)
-                            keyword_hits = hits
-                else:
-                    # Link existe mas página não baixada (HTTP error, robots)
-                    if confidence_label == CONFIDENCE_UNKNOWN:
+        for cand in candidates:
+            url = cand.get("url", "")
+            if not url:
+                continue
+            patt = cand.get("matched_pattern")
+            policy_like = _policy_like(url, patt)
+
+            if _is_pdf(url):
+                if policy_like and best_priority < 2:
+                    value = True
+                    confidence_label = CONFIDENCE_MEDIUM
+                    source = "subpage_selection+pdf_policy_link"
+                    matched_url = url
+                    matched_pattern = patt
+                    matched_against = cand.get("matched_against")
+                    subpage_size = None
+                    keyword_hits = []
+                    best_priority = 2
+                continue
+
+            body = self._find_body_for_url(evidence.html_pages, url)
+            if body and len(body) >= min_size:
+                text_lower = safe_decode(body).lower()
+                hits = [kw for kw in keywords if kw in text_lower]
+                if len(hits) >= kw_high:
+                    value = True
+                    confidence_label = CONFIDENCE_HIGH
+                    source = "subpage_selection+content_qualified"
+                    matched_url = url
+                    matched_pattern = patt
+                    matched_against = cand.get("matched_against")
+                    subpage_size = len(body)
+                    keyword_hits = hits[:10]
+                    best_priority = 3
+                    break
+                elif hits:
+                    if policy_like and best_priority < 1:
                         value = True
                         confidence_label = CONFIDENCE_MEDIUM
-                        source = "subpage_selection+page_not_downloaded"
+                        source = "subpage_selection+content_light_policy_link"
                         matched_url = url
-                        matched_pattern = cand.get("matched_pattern")
+                        matched_pattern = patt
                         matched_against = cand.get("matched_against")
+                        subpage_size = len(body)
+                        keyword_hits = hits
+                        best_priority = 1
+            # body ausente e nao-PDF: NAO conta.
 
-        # 2) Fallback: regex no HTML raiz se nada qualificou
         if not value:
             root = safe_decode(evidence.html_pages.get("/", b""))
             if root:
-                # Procura link com texto "política/aviso/termo + privacidade/dados"
-                m = re.search(
-                    r"(polit\w+|aviso|termo|notifica\w+|declara\w+)[\s_\-]*de[\s_\-]*(privacid\w+|dados\s+pessoais)",
-                    root,
-                    re.IGNORECASE,
-                )
-                if m:
-                    value = True
-                    confidence_label = CONFIDENCE_LOW
-                    source = "html_root_regex_fallback"
-                    matched_pattern = m.group(0)[:80]
-                    matched_against = "html_root"
-                else:
-                    confidence_label = CONFIDENCE_HIGH  # "não tem" também é high
-                    source = "no_match_any_source"
+                confidence_label = CONFIDENCE_HIGH
+                source = "no_match_any_source"
             else:
                 confidence_label = CONFIDENCE_UNKNOWN
                 source = "html_root_vazio"
@@ -162,6 +185,8 @@ class PoliticaPrivacidadeTest(VariableTest):
             "subpage_keyword_hits": keyword_hits,
             "subpage_keyword_count": len(keyword_hits),
             "candidates_count": len(candidates),
+            "min_policy_size_bytes": min_size,
+            "min_keywords_for_high": kw_high,
             "fetcher_used": evidence.fetcher_name,
         }
 
@@ -177,28 +202,13 @@ class PoliticaPrivacidadeTest(VariableTest):
             timestamp_utc=utc_now(),
         )
 
-    # ------------------------------------------------------------------
-    # Helpers internos
-    # ------------------------------------------------------------------
     @staticmethod
-    def _find_body_for_url(
-        html_pages: dict[str, bytes], url: str
-    ) -> bytes | None:
-        """Tenta resolver bytes da subpágina pela URL absoluta.
-
-        html_pages tem como chave o path interno (sem domínio). Estratégia:
-            1. Tenta a URL absoluta diretamente (caso o fetcher armazene assim).
-            2. Extrai o path da URL e busca por correspondência exata.
-            3. Busca por sufixo (caso a chave seja path sem barra inicial).
-        """
+    def _find_body_for_url(html_pages: dict[str, bytes], url: str) -> bytes | None:
         if url in html_pages:
             return html_pages[url]
-        # Extrai path
-        from urllib.parse import urlparse
         path = urlparse(url).path or "/"
         if path in html_pages:
             return html_pages[path]
-        # Tenta sufixo (chaves podem ter normalizações diferentes)
         for key, body in html_pages.items():
             if key.endswith(path) or path.endswith(key):
                 return body

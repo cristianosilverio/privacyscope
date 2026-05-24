@@ -113,11 +113,28 @@ class Orchestrator:
             self.fetcher = FeCls()
             self.fetcher_params = fetcher_cfg.get("params", {})
 
-        # VariableTests
+        # VariableTests — carrega rules_file (se houver) para dentro de params,
+        # realizando o desenho declarado de config externa por teste. Arquivo
+        # como base; params inline do protocolo sobrescrevem. Graceful se faltar.
         self.tests = []
+        _root = Path(__file__).resolve().parents[2]
         for t_cfg in self.protocol["tests"]:
             TestCls = resolve("variable_tests", t_cfg["name"])
-            self.tests.append((TestCls(), t_cfg.get("params", {})))
+            params = dict(t_cfg.get("params", {}))
+            rules_file = t_cfg.get("rules_file")
+            if rules_file:
+                file_params: dict = {}
+                for _p in (Path(rules_file), _root / rules_file):
+                    try:
+                        if _p.is_file():
+                            _data = yaml.safe_load(_p.read_text(encoding="utf-8"))
+                            if isinstance(_data, dict):
+                                file_params = _data
+                            break
+                    except Exception as _e:  # noqa: BLE001
+                        logger.warning("rules_file %s ilegivel: %s", _p, _e)
+                params = {**file_params, **params}
+            self.tests.append((TestCls(), params))
 
     # ------------------------------------------------------------------
     # Domínios
