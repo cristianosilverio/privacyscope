@@ -76,6 +76,8 @@ data/tranco_*/
 # Dados de execucao do pipeline (coleta piloto, pre-piloto, runs) — regeneraveis,
 # nao versionar (tar.gz de evidencias, SQLite, screenshots, logs UTF-16)
 data/b4/
+data/b7/
+data/b7_recollect/
 data/prepilot/
 data/run/
 

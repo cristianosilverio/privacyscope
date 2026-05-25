@@ -280,6 +280,10 @@ class PlaywrightFetcher(PageFetcher):
         if not isinstance(cfg["revoke_after_consent"], bool):
             raise ValueError("revoke_after_consent deve ser bool")
 
+        cfg["ignore_https_errors"] = params.get("ignore_https_errors", True)
+        if not isinstance(cfg["ignore_https_errors"], bool):
+            raise ValueError("ignore_https_errors deve ser bool")
+
         # Banner config — merge com defaults
         banner = params.get("consent_banner", {})
         if not isinstance(banner, dict):
@@ -350,22 +354,48 @@ class PlaywrightFetcher(PageFetcher):
             return None
 
     # ------------------------------------------------------------------
+    # NAVEGACAO (com www-fallback)
+    # ------------------------------------------------------------------
+    async def _goto_with_www_fallback(self, page: Page, url: str, cfg: dict) -> str:
+        """goto(url); em ERR_NAME_NOT_RESOLVED e host sem prefixo 'www.', tenta
+        uma vez www.<host>. Retorna a URL efetivamente carregada; levanta
+        NavigationFailedError se ambas falharem. Preserva a semantica de
+        excecao do goto original (timeout -> NavigationFailedError)."""
+        try:
+            await page.goto(
+                url,
+                wait_until="domcontentloaded",
+                timeout=cfg["navigation_timeout_ms"],
+            )
+            return url
+        except PlaywrightTimeoutError as e:
+            raise NavigationFailedError(f"timeout em goto({url}): {e}") from e
+        except Exception as e:
+            host = url.split("://", 1)[-1].split("/", 1)[0]
+            if "ERR_NAME_NOT_RESOLVED" in str(e) and not host.lower().startswith("www."):
+                alt = url.replace(host, "www." + host, 1)
+                try:
+                    await page.goto(
+                        alt,
+                        wait_until="domcontentloaded",
+                        timeout=cfg["navigation_timeout_ms"],
+                    )
+                    logger.warning("www-fallback aplicado: %s -> %s", url, alt)
+                    return alt
+                except Exception as e2:
+                    raise NavigationFailedError(
+                        f"falha em goto({url}) e no fallback {alt}: {e2}"
+                    ) from e2
+            raise NavigationFailedError(f"falha em goto({url}): {e}") from e
+
+    # ------------------------------------------------------------------
     # FASES
     # ------------------------------------------------------------------
     async def _phase_pre_consent(
         self, page: Page, context: BrowserContext, domain: Domain, cfg: dict
-    ) -> tuple[list[dict], bytes | None]:
-        """Navega + render completo + captura cookies/screenshot ANTES de interação."""
-        try:
-            await page.goto(
-                domain.url,
-                wait_until="domcontentloaded",
-                timeout=cfg["navigation_timeout_ms"],
-            )
-        except PlaywrightTimeoutError as e:
-            raise NavigationFailedError(f"timeout em goto({domain.url}): {e}") from e
-        except Exception as e:
-            raise NavigationFailedError(f"falha em goto({domain.url}): {e}") from e
+    ) -> tuple[list[dict], bytes | None, str]:
+        """Navega (com www-fallback) + render completo + captura cookies/screenshot ANTES de interação."""
+        effective_url = await self._goto_with_www_fallback(page, domain.url, cfg)
 
         await _ensure_full_render(
             page,
@@ -375,7 +405,7 @@ class PlaywrightFetcher(PageFetcher):
         )
         cookies = await self._capture_cookies(context)
         screenshot = await self._capture_screenshot(page, cfg["phase_screenshots"])
-        return cookies, screenshot
+        return cookies, screenshot, effective_url
 
     async def _phase_attempt_accept(self, page: Page, cfg: dict) -> dict[str, Any]:
         """Tenta clicar botão de aceitar do banner. Nunca propaga exceção."""
@@ -645,7 +675,7 @@ class PlaywrightFetcher(PageFetcher):
                     locale=DEFAULT_LOCALE,
                     viewport=DEFAULT_VIEWPORT,
                     user_agent=cfg["user_agent"],
-                    ignore_https_errors=False,
+                    ignore_https_errors=cfg["ignore_https_errors"],
                 )
 
                 # Network log via listeners — captura TODAS as requisições.
@@ -681,7 +711,7 @@ class PlaywrightFetcher(PageFetcher):
                 page = await context.new_page()
 
                 # === FASE 1 — Pre-consent ===
-                cookies_pre, scr_pre = await self._phase_pre_consent(
+                cookies_pre, scr_pre, effective_url = await self._phase_pre_consent(
                     page, context, domain, cfg
                 )
                 if scr_pre:
@@ -721,7 +751,7 @@ class PlaywrightFetcher(PageFetcher):
                 combined_html = ((pre_consent_html or "") + root_html).encode("utf-8")
                 subpage_selection = extract_subpage_candidates(
                     combined_html,
-                    base_url=domain.url,
+                    base_url=effective_url,
                     categories=cfg["subpage_categories"],
                     max_per_category=cfg["max_per_category"],
                     max_total=cfg["max_total_subpages"],
@@ -744,7 +774,7 @@ class PlaywrightFetcher(PageFetcher):
                     # Voltar para a raiz para reabrir central de privacidade
                     try:
                         await page.goto(
-                            domain.url,
+                            effective_url,
                             wait_until="domcontentloaded",
                             timeout=cfg["navigation_timeout_ms"],
                         )

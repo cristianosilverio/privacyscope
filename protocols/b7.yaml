@@ -1,0 +1,332 @@
+# =============================================================================
+# B7 — expansao n=200 (alvo 160 empresariais + 40 governamentais)
+#
+# Amostra a ser gerada por scripts/sample_b7.py (seed 20260524, Tranco list_id
+# 43Z8X, top-1M .br), revisada manualmente, e congelada em override_domains
+# abaixo. Mantem a sobre-representacao do estrato governamental do B4.
+#
+# Detectores: versoes refinadas pos-piloto (banner v0.3.1, politica v0.2.1,
+# canal v0.2.2), com config externa via rules_file.
+#
+# STATUS: ESQUELETO — preencher override_domains apos revisar protocols/b7_sample.csv.
+# =============================================================================
+
+metadata:
+  protocol_version: "b7-v1.0.0"
+  description: "Expansao B7 n=200 estratificado; 3 variaveis deterministicas refinadas"
+
+# Amostra B7 revisada (protocols/b7_sample.csv, todos aprovados):
+#   50 governamentais + 208 empresariais = 258 candidatos (buffer).
+#   Selecao final por estrato (alvo 160 corp + 40 gov) e pos-processada do SQLite,
+#   tomando os primeiros que coletarem com sucesso.
+override_domains:
+  - "https://inss.gov.br"
+  - "https://matogrossodosul.pr.gov.br"
+  - "https://tce.sp.gov.br"
+  - "https://gdfnet.df.gov.br"
+  - "https://dourados.ms.gov.br"
+  - "https://marica.rj.gov.br"
+  - "https://cbtu.gov.br"
+  - "https://bertioga.sp.gov.br"
+  - "https://artesp.sp.gov.br"
+  - "https://pmsg.rj.gov.br"
+  - "https://sds.pe.gov.br"
+  - "https://detran.pe.gov.br"
+  - "https://trilhasdefuturo.mg.gov.br"
+  - "https://fgts.gov.br"
+  - "https://pge.rn.gov.br"
+  - "https://assistenciasocial.se.gov.br"
+  - "https://fazenda.gov.br"
+  - "https://riobonito.rj.gov.br"
+  - "https://dns1e.sp.gov.br"
+  - "https://webdenuncia.sp.gov.br"
+  - "https://scdp.am.gov.br"
+  - "https://pousoalegre.mg.gov.br"
+  - "https://itaborai.rj.gov.br"
+  - "https://seap.pb.gov.br"
+  - "https://bombeiros.to.gov.br"
+  - "https://jornalminasgerais.mg.gov.br"
+  - "https://santaluzia.mg.gov.br"
+  - "https://tributos.gov.br"
+  - "https://vlibras.gov.br"
+  - "https://pjf.mg.gov.br"
+  - "https://prefeituradearuja.sp.gov.br"
+  - "https://sefazrs.rs.gov.br"
+  - "https://sei.rj.gov.br"
+  - "https://presidencia.gov.br"
+  - "https://pmpr.pr.gov.br"
+  - "https://iti.gov.br"
+  - "https://dioe.pr.gov.br"
+  - "https://mogidascruzes.sp.gov.br"
+  - "https://valinhos.sp.gov.br"
+  - "https://piauilink.pi.gov.br"
+  - "https://araruama.rj.gov.br"
+  - "https://vreredesim.sp.gov.br"
+  - "https://desenvolvimento.gov.br"
+  - "https://itapevi.sp.gov.br"
+  - "https://fala.sp.gov.br"
+  - "https://susepe.rs.gov.br"
+  - "https://braganca.sp.gov.br"
+  - "https://saogoncalo.rn.gov.br"
+  - "https://goiania.go.gov.br"
+  - "https://saogoncalo.rj.gov.br"
+  - "https://angeloni.com.br"
+  - "https://matrizskateshop.com.br"
+  - "https://woxikon.com.br"
+  - "https://grupomateus.com.br"
+  - "https://pantoja11.com.br"
+  - "https://sissifios.com.br"
+  - "https://empregasaojose.com.br"
+  - "https://webhaus.com.br"
+  - "https://acheipneus.com.br"
+  - "https://biorebrasil.com.br"
+  - "https://mysmartclinic.com.br"
+  - "https://portalbnu.com.br"
+  - "https://porta80.com.br"
+  - "https://braskem.com.br"
+  - "https://emailemnuvem.com.br"
+  - "https://espaider.com.br"
+  - "https://funerariasaojoao.com.br"
+  - "https://awtelecomserver.com.br"
+  - "https://davoiisp.com.br"
+  - "https://omnilink.com.br"
+  - "https://romabc.com.br"
+  - "https://seminovosmovida.com.br"
+  - "https://winco.com.br"
+  - "https://dntbras.com.br"
+  - "https://holeriteonline.com.br"
+  - "https://cronoshare.com.br"
+  - "https://grupoip2.com.br"
+  - "https://uninove.br"
+  - "https://newstorerj.com.br"
+  - "https://seucondominio.com.br"
+  - "https://workbandalarga.com.br"
+  - "https://estudeseg.com.br"
+  - "https://unc.br"
+  - "https://movidacloud.com.br"
+  - "https://telecomvirtual.com.br"
+  - "https://livralivro.com.br"
+  - "https://fortatacadista.com.br"
+  - "https://daypag.com.br"
+  - "https://mftelecom.net.br"
+  - "https://jgean.com.br"
+  - "https://maisconsultoria.com.br"
+  - "https://voetur.com.br"
+  - "https://acessodigital.com.br"
+  - "https://compraevolta.com.br"
+  - "https://serverconsignado.com.br"
+  - "https://mimocrafts.com.br"
+  - "https://alugoportemporada.com.br"
+  - "https://vitoriadaconquistanoticias.com.br"
+  - "https://iplaza.com.br"
+  - "https://hisaleiloes.com.br"
+  - "https://ocorreio.com.br"
+  - "https://netflix.com.br"
+  - "https://efoa.br"
+  - "https://appclientefiel.com.br"
+  - "https://propmark.com.br"
+  - "https://petlife.com.br"
+  - "https://onfly.com.br"
+  - "https://conexasaude.com.br"
+  - "https://lunacom.com.br"
+  - "https://nddigital.com.br"
+  - "https://acelerati.com.br"
+  - "https://ropek.com.br"
+  - "https://anglocursos.com.br"
+  - "https://lojaprohall.com.br"
+  - "https://amazoniareal.com.br"
+  - "https://yomu.com.br"
+  - "https://megagym.com.br"
+  - "https://arquidiocesedefortaleza.org.br"
+  - "https://centrosultelecom.com.br"
+  - "https://sistemalift1.com.br"
+  - "https://ezectech.com.br"
+  - "https://nalisa.com.br"
+  - "https://boadiversao.com.br"
+  - "https://monitormercantil.com.br"
+  - "https://tbhesportes.com.br"
+  - "https://casadascercas.com.br"
+  - "https://vans.com.br"
+  - "https://alpinestarsbr.com.br"
+  - "https://radiomaanaim.com.br"
+  - "https://esferaconstrucaoereforma.com.br"
+  - "https://legrand-ddns.com.br"
+  - "https://mediservice.com.br"
+  - "https://paymee.com.br"
+  - "https://predize.com.br"
+  - "https://appunimedvsf.com.br"
+  - "https://redacaonline.com.br"
+  - "https://ibpt.org.br"
+  - "https://communicare.com.br"
+  - "https://sisdanca.com.br"
+  - "https://flertemaduro.com.br"
+  - "https://vagasaracatuba.com.br"
+  - "https://viajarbarato.com.br"
+  - "https://kouda.com.br"
+  - "https://getdemo.com.br"
+  - "https://americanas.com.br"
+  - "https://fmcsv.org.br"
+  - "https://brde.com.br"
+  - "https://consorciokawasakibrasil.com.br"
+  - "https://qualidoc.com.br"
+  - "https://gestaoiss.com.br"
+  - "https://fipe.org.br"
+  - "https://trackjob.com.br"
+  - "https://zeroduvidas.com.br"
+  - "https://alfaunipac.com.br"
+  - "https://vakinha.com.br"
+  - "https://quadritelecom.net.br"
+  - "https://brasscom.org.br"
+  - "https://futsalrj.com.br"
+  - "https://itdg.com.br"
+  - "https://stella.com.br"
+  - "https://harem69.com.br"
+  - "https://aprendebrasil.com.br"
+  - "https://restaurantevinarium.com.br"
+  - "https://favaretoleiloes.com.br"
+  - "https://cinbesa.com.br"
+  - "https://lingovideo.com.br"
+  - "https://liquidostore.com.br"
+  - "https://sdparking.com.br"
+  - "https://smartlayer.net.br"
+  - "https://pauapique.com.br"
+  - "https://paketa.com.br"
+  - "https://freemeteo.com.br"
+  - "https://sicdigital.com.br"
+  - "https://uniaoquimica.com.br"
+  - "https://diariodolitoral.com.br"
+  - "https://bellaenxovais.com.br"
+  - "https://uffs.edu.br"
+  - "https://riachuelo.com.br"
+  - "https://damie.com.br"
+  - "https://datanetlink.com.br"
+  - "https://knnidiomas.com.br"
+  - "https://vhita.com.br"
+  - "https://unicuritiba.edu.br"
+  - "https://biglinux.com.br"
+  - "https://unicesumar.edu.br"
+  - "https://c3telecom.net.br"
+  - "https://primaxonline.com.br"
+  - "https://appvendasplus.com.br"
+  - "https://conexaoincriveis.com.br"
+  - "https://suvinil.com.br"
+  - "https://mangasbrasuka.com.br"
+  - "https://meuollie.com.br"
+  - "https://topview.com.br"
+  - "https://jbcred.com.br"
+  - "https://datastone.com.br"
+  - "https://mc1.com.br"
+  - "https://unimedmaceio.com.br"
+  - "https://mpf.mp.br"
+  - "https://rollingstone.com.br"
+  - "https://fabrispuma.com.br"
+  - "https://domhelder.edu.br"
+  - "https://padovani.com.br"
+  - "https://icbsena.com.br"
+  - "https://farmabase.com.br"
+  - "https://yelumseguros.com.br"
+  - "https://mailworld.com.br"
+  - "https://gruppy.com.br"
+  - "https://tumelero.com.br"
+  - "https://broto.com.br"
+  - "https://asvezestem.com.br"
+  - "https://sellercorp.com.br"
+  - "https://ifsp.edu.br"
+  - "https://sistemapoliedro.com.br"
+  - "https://elojob.com.br"
+  - "https://danielgarcialeiloes.com.br"
+  - "https://uninorte.com.br"
+  - "https://jairamintas.com.br"
+  - "https://temconsignado.com.br"
+  - "https://turbonetworkdns.com.br"
+  - "https://netbiostele.com.br"
+  - "https://bnews.com.br"
+  - "https://hondaposvenda.com.br"
+  - "https://sostelecomsistema.com.br"
+  - "https://dcmais.com.br"
+  - "https://masternetrs.com.br"
+  - "https://esportelandia.com.br"
+  - "https://kickante.com.br"
+  - "https://farmagerty.com.br"
+  - "https://zuq.com.br"
+  - "https://hdmix.com.br"
+  - "https://t4stecnologia.com.br"
+  - "https://phbsolar.com.br"
+  - "https://lojadexco.com.br"
+  - "https://seiziguitars.com.br"
+  - "https://safeweb.com.br"
+  - "https://pinhalnet.net.br"
+  - "https://wca-telecom.com.br"
+  - "https://webs.com.br"
+  - "https://carrefoursolucoes.com.br"
+  - "https://ibyte.com.br"
+  - "https://e-agro.com.br"
+  - "https://asa.com.br"
+  - "https://institutoayrtonsenna.org.br"
+  - "https://criacaodesign.com.br"
+  - "https://arvore.com.br"
+  - "https://totallinks.com.br"
+  - "https://blogdovalente.com.br"
+  - "https://painelsite.com.br"
+  - "https://eadestudo.com.br"
+  - "https://casadaarte.com.br"
+  - "https://k13.com.br"
+  - "https://deline.com.br"
+  - "https://samello.com.br"
+  - "https://portinfo.com.br"
+  - "https://equiperf.app.br"
+  - "https://lojasantuarionacional.com.br"
+  - "https://cadernointeligente.com.br"
+  - "https://celcoin.com.br"
+
+repository:
+  name: filesystem
+  params:
+    base_path: "data/b7/"
+
+result_store:
+  name: sqlite
+  params:
+    db_path: "data/b7/results.sqlite"
+
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+      - name: http_simples
+        params:
+          respect_robots_txt: true
+          max_per_category: 2
+          max_total_subpages: 6
+          connect_timeout_s: 10
+          read_timeout_s: 30
+        escalate_if:
+          - signal: cookies_pre_consent_zero
+          - signal: html_root_smaller_than_bytes
+            threshold: 5000
+          - signal: subpage_selection_empty
+          - signal: has_js_shell_markers
+          - exception: JsRequiredError
+          - exception: NavigationFailedError
+          - exception: FetchError
+      - name: playwright
+        params:
+          headless: true
+          phase_screenshots: true
+          revoke_after_consent: false
+          scroll_max_iterations: 3
+          max_per_category: 2
+          max_total_subpages: 6
+    abort_on:
+      - exception: RobotsDisallowedError
+
+tests:
+  - name: banner_cookies
+    rules_file: config/rules/banner_cookies.yaml
+    params: {}
+  - name: politica_privacidade
+    rules_file: config/rules/politica_privacidade.yaml
+    params: {}
+  - name: canal_titular
+    rules_file: config/rules/canal_titular.yaml
+    params: {}
