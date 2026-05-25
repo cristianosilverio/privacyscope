@@ -1,0 +1,92 @@
+# =============================================================================
+# B7 SUPLEMENTO GOV — sorteio adicional do estrato governamental.
+#
+# Motivo: a amostra original de 50 gov rendeu apenas 33 coletas vivas (17
+# dominios mortos/inacessiveis mesmo apos endurecer o fetcher). Para atingir o
+# alvo pre-registrado de 40 gov, sorteamos candidatos gov ADICIONAIS da MESMA
+# lista Tranco 43Z8X (seed 20260525, scripts/sample_b7_gov_supp.py), excluindo
+# os 50 ja usados. Mantem o frame amostral; sem misturar lista oficial .gov.br.
+#
+# Selecao final: dos sucessos deste suplemento, tomar os primeiros na ordem
+# congelada ate completar 40 gov (33 ja coletados + 7).
+#
+# Detectores: identicos ao b7.yaml (banner v0.3.1, politica v0.2.1, canal v0.2.2).
+# Fetcher: endurecido (ignore_https_errors + www-fallback).
+# =============================================================================
+
+metadata:
+  protocol_version: "b7-gov-supp-v1.0.0"
+  description: "Suplemento gov B7 (sorteio adicional Tranco 43Z8X, seed 20260525)"
+
+# 18 candidatos gov suplementares aprovados (revisao manual).
+override_domains:
+  - "https://tcu.gov.br"
+  - "https://mec.gov.br"
+  - "https://cdhu.sp.gov.br"
+  - "https://www.sc.gov.br"
+  - "https://educacao.go.gov.br"
+  - "https://sefaz.rs.gov.br"
+  - "https://cgu.gov.br"
+  - "https://sigeduc.rn.gov.br"
+  - "https://esocial.gov.br"
+  - "https://cidadao.mg.gov.br"
+  - "https://policiacientifica.sc.gov.br"
+  - "https://meriti.rj.gov.br"
+  - "https://ima.sc.gov.br"
+  - "https://consultaescolas.pr.gov.br"
+  - "https://valesocial.rj.gov.br"
+  - "https://maraba.pa.gov.br"
+  - "https://bombeiros.mg.gov.br"
+  - "https://www.to.gov.br"
+
+repository:
+  name: filesystem
+  params:
+    base_path: "data/b7_gov_supp/"
+
+result_store:
+  name: sqlite
+  params:
+    db_path: "data/b7_gov_supp/results.sqlite"
+
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+      - name: http_simples
+        params:
+          respect_robots_txt: true
+          max_per_category: 2
+          max_total_subpages: 6
+          connect_timeout_s: 10
+          read_timeout_s: 30
+        escalate_if:
+          - signal: cookies_pre_consent_zero
+          - signal: html_root_smaller_than_bytes
+            threshold: 5000
+          - signal: subpage_selection_empty
+          - signal: has_js_shell_markers
+          - exception: JsRequiredError
+          - exception: NavigationFailedError
+          - exception: FetchError
+      - name: playwright
+        params:
+          headless: true
+          phase_screenshots: true
+          revoke_after_consent: false
+          scroll_max_iterations: 3
+          max_per_category: 2
+          max_total_subpages: 6
+    abort_on:
+      - exception: RobotsDisallowedError
+
+tests:
+  - name: banner_cookies
+    rules_file: config/rules/banner_cookies.yaml
+    params: {}
+  - name: politica_privacidade
+    rules_file: config/rules/politica_privacidade.yaml
+    params: {}
+  - name: canal_titular
+    rules_file: config/rules/canal_titular.yaml
+    params: {}
