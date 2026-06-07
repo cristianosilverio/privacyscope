@@ -1,0 +1,147 @@
+# =============================================================================
+# B7_T1 — RECOLETA UNIVERSAL DA SUBAMOSTRA HELD-OUT B8 (n=50)
+#
+# Motivo metodologico (registrado para defesa em banca):
+# ---------------------------------------------------------------------------
+# A subamostra B8 (n=50, sorteada da amostra B7 efetiva com seed 20260606)
+# serve como held-out cego para validacao independente dos detectores
+# deterministicos (banner v0.3.1, politica v0.2.1, canal v0.2.2). A coleta
+# original do B7 foi realizada em 24/05/2026. A rotulagem manual cega
+# (gold standard) foi realizada em 06-07/06/2026, ~13 dias depois.
+#
+# Tres problemas observados durante a analise forense dos FN do B8:
+#   1. Defasagem temporal de 13 dias entre snapshot do detector e estado do
+#      sitio observado pelo rotulador humano.
+#   2. Falhas tecnicas de coleta na rodada original (ex.: predize.com.br
+#      retornou DOM vazio em 24/05; navega normalmente em 07/06).
+#   3. Padrao estrutural conhecido em sitios .gov.br: material LGPD em
+#      profundidade 2, atras de secoes de Acesso a Informacao (Lei
+#      12.527/2011 — LAI). Confirmado em saogoncalo.rn (acessoainformacao.php
+#      → lgpd.php) e cgu (acesso-a-informacao → privacidade-e-protecao-de-dados).
+#
+# Caminho escolhido (decisao 2026-06-07): recoleta UNIVERSAL dos 50 sitios
+# em t1 (=hoje), preservando intacto o snapshot original em data/b7/. Este
+# protocolo executa a recoleta sem alterar detectores; apenas o pipeline de
+# descoberta de subpaginas evoluiu (subpage v0.3.0 com categoria-trampolim).
+# Compara-se b7_T0 (24/05) vs b7_T1 (08/06) lado a lado no V6.
+# ---------------------------------------------------------------------------
+#
+# Detectores: identicos ao b7.yaml (banner v0.3.1, politica v0.2.1, canal v0.2.2).
+# Pipeline de descoberta de subpaginas: subpage v0.3.0 (trampolim LAI).
+# Fetchers: http v0.2.0 (final_url pos-redirect), playwright v0.2.0.
+# =============================================================================
+
+metadata:
+  protocol_version: "b7-T1-v1.0.0"
+  description: >
+    Recoleta universal da subamostra held-out B8 (n=50) em t1=2026-06-08.
+    Mesmas regras do b7-v1.0.0; trampolim LAI ativo via subpage v0.3.0.
+    Snapshot original (b7_T0, 24/05) preservado intacto em data/b7/.
+
+# Universo: 50 sitios da subamostra held-out B8, gerada por
+# scripts/sample_b8.py com random.Random(20260606) sobre as 200 efetivas
+# do B7. Estratificada: 40 corporativos + 10 governamentais (mesma proporcao
+# 80/20 do B7). Ordem preservada conforme b8_subamostra.csv (ordem_b8 1..50).
+override_domains:
+  - "https://safeweb.com.br"  # ordem_b8=1, estrato=corp
+  - "https://hondaposvenda.com.br"  # ordem_b8=2, estrato=corp
+  - "https://daypag.com.br"  # ordem_b8=3, estrato=corp
+  - "https://newstorerj.com.br"  # ordem_b8=4, estrato=corp
+  - "https://vhita.com.br"  # ordem_b8=5, estrato=corp
+  - "https://uninorte.com.br"  # ordem_b8=6, estrato=corp
+  - "https://sistemalift1.com.br"  # ordem_b8=7, estrato=corp
+  - "https://iplaza.com.br"  # ordem_b8=8, estrato=corp
+  - "https://restaurantevinarium.com.br"  # ordem_b8=9, estrato=corp
+  - "https://winco.com.br"  # ordem_b8=10, estrato=corp
+  - "https://t4stecnologia.com.br"  # ordem_b8=11, estrato=corp
+  - "https://sisdanca.com.br"  # ordem_b8=12, estrato=corp
+  - "https://danielgarcialeiloes.com.br"  # ordem_b8=13, estrato=corp
+  - "https://fipe.org.br"  # ordem_b8=14, estrato=corp
+  - "https://harem69.com.br"  # ordem_b8=15, estrato=corp
+  - "https://unimedmaceio.com.br"  # ordem_b8=16, estrato=corp
+  - "https://predize.com.br"  # ordem_b8=17, estrato=corp
+  - "https://lunacom.com.br"  # ordem_b8=18, estrato=corp
+  - "https://damie.com.br"  # ordem_b8=19, estrato=corp
+  - "https://conexaoincriveis.com.br"  # ordem_b8=20, estrato=corp
+  - "https://temconsignado.com.br"  # ordem_b8=21, estrato=corp
+  - "https://getdemo.com.br"  # ordem_b8=22, estrato=corp
+  - "https://biglinux.com.br"  # ordem_b8=23, estrato=corp
+  - "https://domhelder.edu.br"  # ordem_b8=24, estrato=corp
+  - "https://consorciokawasakibrasil.com.br"  # ordem_b8=25, estrato=corp
+  - "https://brasscom.org.br"  # ordem_b8=26, estrato=corp
+  - "https://boadiversao.com.br"  # ordem_b8=27, estrato=corp
+  - "https://ocorreio.com.br"  # ordem_b8=28, estrato=corp
+  - "https://mftelecom.net.br"  # ordem_b8=29, estrato=corp
+  - "https://kickante.com.br"  # ordem_b8=30, estrato=corp
+  - "https://grupomateus.com.br"  # ordem_b8=31, estrato=corp
+  - "https://alugoportemporada.com.br"  # ordem_b8=32, estrato=corp
+  - "https://voetur.com.br"  # ordem_b8=33, estrato=corp
+  - "https://onfly.com.br"  # ordem_b8=34, estrato=corp
+  - "https://nddigital.com.br"  # ordem_b8=35, estrato=corp
+  - "https://dntbras.com.br"  # ordem_b8=36, estrato=corp
+  - "https://unc.br"  # ordem_b8=37, estrato=corp
+  - "https://meuollie.com.br"  # ordem_b8=38, estrato=corp
+  - "https://anglocursos.com.br"  # ordem_b8=39, estrato=corp
+  - "https://sdparking.com.br"  # ordem_b8=40, estrato=corp
+  - "https://piauilink.pi.gov.br"  # ordem_b8=41, estrato=gov
+  - "https://itapevi.sp.gov.br"  # ordem_b8=42, estrato=gov
+  - "https://cgu.gov.br"  # ordem_b8=43, estrato=gov
+  - "https://saogoncalo.rn.gov.br"  # ordem_b8=44, estrato=gov
+  - "https://pge.rn.gov.br"  # ordem_b8=45, estrato=gov
+  - "https://pousoalegre.mg.gov.br"  # ordem_b8=46, estrato=gov
+  - "https://dioe.pr.gov.br"  # ordem_b8=47, estrato=gov
+  - "https://marica.rj.gov.br"  # ordem_b8=48, estrato=gov
+  - "https://www.sc.gov.br"  # ordem_b8=49, estrato=gov
+  - "https://braganca.sp.gov.br"  # ordem_b8=50, estrato=gov
+
+repository:
+  name: filesystem
+  params:
+    base_path: "data/b7_T1/"
+
+result_store:
+  name: sqlite
+  params:
+    db_path: "data/b7_T1/results.sqlite"
+
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+      - name: http_simples
+        params:
+          respect_robots_txt: true
+          max_per_category: 2
+          max_total_subpages: 6
+          connect_timeout_s: 10
+          read_timeout_s: 30
+        escalate_if:
+          - signal: cookies_pre_consent_zero
+          - signal: html_root_smaller_than_bytes
+            threshold: 5000
+          - signal: subpage_selection_empty
+          - signal: has_js_shell_markers
+          - exception: JsRequiredError
+          - exception: NavigationFailedError
+          - exception: FetchError
+      - name: playwright
+        params:
+          headless: true
+          phase_screenshots: true
+          revoke_after_consent: false
+          scroll_max_iterations: 3
+          max_per_category: 2
+          max_total_subpages: 6
+    abort_on:
+      - exception: RobotsDisallowedError
+
+tests:
+  - name: banner_cookies
+    rules_file: config/rules/banner_cookies.yaml
+    params: {}
+  - name: politica_privacidade
+    rules_file: config/rules/politica_privacidade.yaml
+    params: {}
+  - name: canal_titular
+    rules_file: config/rules/canal_titular.yaml
+    params: {}
