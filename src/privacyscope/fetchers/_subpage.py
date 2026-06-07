@@ -31,6 +31,15 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 
+#: Versão semântica deste módulo. Bumped para 0.3.0 em 2026-06-07 com a
+#: introdução da categoria-trampolim ``acesso_informacao_gov`` (Lei 12.527/2011)
+#: e da função ``extract_trampoline_lgpd_candidates`` que habilita descoberta
+#: de páginas LGPD em profundidade 2 a partir de seções de Acesso à Informação.
+#: Esta constante aparece em ``meta.json`` da camada de Evidência Bruta para
+#: rastreabilidade da versão do descobridor de subpáginas usada em cada coleta.
+SUBPAGE_VERSION = "0.3.0"
+
+
 #: Padrões default para detecção de subpáginas em sites institucionais brasileiros.
 #: Cada chave é uma categoria; cada valor é lista de regexes (case-insensitive)
 #: que casa contra atributos do <a>. Sobrescritível via params do protocolo.
@@ -84,7 +93,46 @@ DEFAULT_SUBPAGE_CATEGORIES: dict[str, list[str]] = {
         r"requisi\w*[\s_\-]*lgpd",
         r"solicita\w*[\s_\-]*lgpd",
     ],
+    # Categoria-trampolim adicionada em v0.3.0 (2026-06-07). Não é alvo direto
+    # da análise — serve para descobrir páginas LGPD em profundidade 2 a
+    # partir de seções de Acesso à Informação. Justificativa normativa: a Lei
+    # 12.527/2011 (LAI) obriga sítios públicos brasileiros (e entes equiparados:
+    # autarquias, empresas estatais, fundações, empresas que recebem recursos
+    # públicos — art. 1º, parágrafo único) a manter seção dedicada de
+    # Acesso à Informação. Material LGPD frequentemente reside dentro dela,
+    # em vez de no menu principal. Observado no B8 (n=50 held-out) em
+    # saogoncalo.rn.gov.br (acessoainformacao.php → lgpd.php) e cgu.gov.br
+    # (acesso-a-informacao → privacidade-e-protecao-de-dados). Sem esta
+    # categoria-trampolim, o descobridor de subpáginas com profundidade 1
+    # falha sistematicamente para esse padrão estrutural. O comportamento
+    # de trampolim — i.e., a páginas dessa categoria são SECUNDARIAMENTE
+    # varridas em busca de páginas LGPD — é controlado pelos fetchers via
+    # consulta a ``TRAMPOLINE_CATEGORIES`` e ``extract_trampoline_lgpd_candidates``.
+    "acesso_informacao_gov": [
+        r"acesso[\s_\-]*[àa][\s_\-]*informa\w*",
+        r"acessoainforma\w*",
+        r"\btranspar\w*",
+        r"\be[\s_\-]*sic\b",
+        r"\bouvidor\w*",
+    ],
 }
+
+
+#: Categorias cuja coleta dispara descoberta de profundidade 2 (varredura do
+#: HTML da subpágina por links LGPD). Os fetchers consultam este conjunto
+#: depois da coleta principal e antes de retornar a RawEvidence. Manter como
+#: ``frozenset`` para impedir mutação acidental por consumidores.
+TRAMPOLINE_CATEGORIES: frozenset[str] = frozenset({"acesso_informacao_gov"})
+
+
+#: Categorias LGPD-alvo que a profundidade 2 do trampolim TENTA descobrir.
+#: Exclui o próprio trampolim (evita auto-recursão) e ``termos_uso`` (não é
+#: alvo LGPD core; sua descoberta segue restrita à profundidade 1).
+DEFAULT_LGPD_DEPTH2_CATEGORIES: frozenset[str] = frozenset({
+    "politica_privacidade",
+    "encarregado",
+    "canal_titular",
+})
 
 
 #: Path-blockers (Refinamento D, 2026-05-20): padrões de URL que indicam
@@ -164,6 +212,7 @@ def extract_subpage_candidates(
     max_per_category: int,
     max_total: int,
     path_blockers: list[str] | None = None,
+    same_host_categories: frozenset[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Encontra subpáginas candidatas no HTML e devolve auditoria por categoria.
 
@@ -184,10 +233,22 @@ def extract_subpage_candidates(
     Args:
         html: HTML como bytes ou string. Aceita ambos para que o
             PlaywrightFetcher possa passar ``page.content()`` diretamente.
-        base_url: URL absoluta para resolver hrefs relativos.
+        base_url: URL absoluta para resolver hrefs relativos. **Deve ser a
+            URL final pós-redirect** quando ``same_host_categories`` for
+            usado — caso contrário o teste de same-host compara contra um
+            netloc obsoleto.
         categories: dict de regexes por categoria (já validado).
         max_per_category: limite de URLs por categoria.
         max_total: teto global de URLs.
+        path_blockers: lista de regexes para descartar URLs editoriais/
+            efêmeras (notícias, blog). Default ``DEFAULT_PATH_BLOCKERS``.
+        same_host_categories: conjunto de categorias que devem aceitar
+            APENAS candidatos com o mesmo host (netloc) do ``base_url`` ou
+            subdomínios dele. Útil para categorias-trampolim — material de
+            Acesso à Informação que mora em portal terceirizado de gestão
+            (sogov, geocriativa, betha) não cumpre a LAI da forma esperada
+            e não conterá evidência LGPD do controlador originário.
+            Default ``None`` (desativado).
 
     Returns:
         Dict ``{categoria: [items]}`` deduplicado.
@@ -203,6 +264,21 @@ def extract_subpage_candidates(
     # Refinamento D: compila path-blockers (default ou override do protocolo).
     blocker_patterns = path_blockers if path_blockers is not None else DEFAULT_PATH_BLOCKERS
     compiled_blockers = [re.compile(p, re.IGNORECASE) for p in blocker_patterns]
+
+    # Refinamento E (v0.3.0, 2026-06-07): same-host enforcement por categoria.
+    # Para categorias listadas em ``same_host_categories``, candidatos com
+    # netloc diferente do base_url são descartados ANTES de saturar
+    # ``max_per_category``. Calcula o netloc-base uma única vez.
+    from urllib.parse import urlparse as _urlparse  # local import (evita poluir top)
+
+    def _normalize_netloc(nl: str) -> str:
+        """Normaliza netloc: lowercase, strip 'www.' inicial. Bug-fix vs lstrip
+        que aceita set de chars, não prefixo string."""
+        nl = nl.lower()
+        return nl[4:] if nl.startswith("www.") else nl
+
+    base_netloc = _normalize_netloc(_urlparse(base_url).netloc) if base_url else ""
+    same_host_set = same_host_categories or frozenset()
 
     result: dict[str, list[dict[str, Any]]] = {cat: [] for cat in categories}
     # Refinamento B (2026-05-19): dedup POR categoria (nao global), permitindo
@@ -263,6 +339,18 @@ def extract_subpage_candidates(
             # slug mas não são documentos normativos.
             if any(b.search(full_url) for b in compiled_blockers):
                 continue
+            # Refinamento E (v0.3.0): same-host enforcement por categoria.
+            # Categorias-trampolim (Acesso à Informação) exigem que o destino
+            # esteja no mesmo host do base_url ou em subdomínio dele —
+            # material LAI em portal terceirizado (sogov, geocriativa, betha)
+            # não contém evidência LGPD do controlador originário e levaria
+            # o trampolim a descer em domínio errado, desperdiçando orçamento.
+            if cat in same_host_set:
+                cand_netloc = _normalize_netloc(_urlparse(full_url).netloc)
+                if cand_netloc != base_netloc and not cand_netloc.endswith(
+                    "." + base_netloc
+                ):
+                    continue
             # Dedup por categoria: a mesma URL pode entrar em categorias
             # distintas, mas nao duas vezes na mesma categoria.
             if full_url in seen_per_cat[cat]:
@@ -288,9 +376,98 @@ def extract_subpage_candidates(
     return {cat: items for cat, items in result.items() if items}
 
 
+def extract_trampoline_lgpd_candidates(
+    html: bytes | str,
+    base_url: str,
+    categories: dict[str, list[str]],
+    source_category: str,
+    max_per_category: int = 1,
+    max_total: int = 3,
+    path_blockers: list[str] | None = None,
+    lgpd_target_categories: frozenset[str] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Descobre páginas LGPD em profundidade 2 a partir de uma página-trampolim.
+
+    Aplica ``extract_subpage_candidates`` SOMENTE com as categorias LGPD-alvo
+    (default ``DEFAULT_LGPD_DEPTH2_CATEGORIES``), anota ``discovered_via`` em
+    cada item com a categoria de origem (``"trampoline:<source_category>"``) e
+    devolve o mesmo formato de ``extract_subpage_candidates``.
+
+    Justificativa de design — por que separar do ``extract_subpage_candidates``:
+
+    - **Defesa contra auto-recursão**: garante que ``acesso_informacao_gov``
+      não dispare nova descoberta a partir de uma página-trampolim já varrida.
+    - **Tetos próprios**: a profundidade 2 usa orçamento separado (default
+      ``max_total=3``), não consume o ``max_total_subpages`` global. Evita
+      que sítios com muitos links LAI esgotem o teto sem ter explorado a
+      profundidade 1.
+    - **Auditabilidade**: o campo ``discovered_via`` permite distinguir, na
+      camada de Análise e no audit_trail, candidatos descobertos diretamente
+      (depth 1) de candidatos descobertos via LAI (depth 2). Crucial para a
+      defesa metodológica em banca.
+
+    Args:
+        html: HTML da página-trampolim (já coletada).
+        base_url: URL da página-trampolim. Usada para resolver hrefs
+            relativos da profundidade 2 corretamente.
+        categories: Mesmo dict completo de categorias passado para
+            ``extract_subpage_candidates``. Será filtrado internamente para
+            ``lgpd_target_categories``.
+        source_category: Nome da categoria-trampolim que originou esta
+            chamada (ex.: ``"acesso_informacao_gov"``). Aparece em
+            ``discovered_via``.
+        max_per_category: Limite de URLs por categoria LGPD. Default 1.
+        max_total: Teto local de URLs descobertas em profundidade 2.
+            Default 3 — propositalmente conservador.
+        path_blockers: Override opcional dos default path-blockers.
+        lgpd_target_categories: Override opcional do conjunto de categorias
+            LGPD-alvo. Default ``DEFAULT_LGPD_DEPTH2_CATEGORIES``.
+
+    Returns:
+        Dict ``{categoria_lgpd: [items]}`` no mesmo formato de
+        ``extract_subpage_candidates``, com cada item enriquecido com
+        ``discovered_via: f"trampoline:{source_category}"``.
+        Categorias sem matches são omitidas.
+    """
+    if lgpd_target_categories is None:
+        lgpd_target_categories = DEFAULT_LGPD_DEPTH2_CATEGORIES
+    filtered_cats = {
+        cat: patterns
+        for cat, patterns in categories.items()
+        if cat in lgpd_target_categories
+    }
+    if not filtered_cats:
+        return {}
+    # Trampolim impõe same-host em TODAS as categorias LGPD-alvo (v0.3.0):
+    # material LGPD do controlador originário tipicamente reside no próprio
+    # host, não em portais terceirizados. Preserva integridade da evidência
+    # para a camada de Análise (e.g., e-mail do canal precisa ser do domínio
+    # próprio do controlador, regra do detector v0.2.2 do canal).
+    raw = extract_subpage_candidates(
+        html=html,
+        base_url=base_url,
+        categories=filtered_cats,
+        max_per_category=max_per_category,
+        max_total=max_total,
+        path_blockers=path_blockers,
+        same_host_categories=lgpd_target_categories,
+    )
+    annotated: dict[str, list[dict[str, Any]]] = {}
+    for cat, items in raw.items():
+        annotated[cat] = [
+            {**item, "discovered_via": f"trampoline:{source_category}"}
+            for item in items
+        ]
+    return annotated
+
+
 __all__ = [
+    "SUBPAGE_VERSION",
     "DEFAULT_SUBPAGE_CATEGORIES",
     "DEFAULT_PATH_BLOCKERS",
+    "TRAMPOLINE_CATEGORIES",
+    "DEFAULT_LGPD_DEPTH2_CATEGORIES",
     "validate_subpage_config",
     "extract_subpage_candidates",
+    "extract_trampoline_lgpd_candidates",
 ]

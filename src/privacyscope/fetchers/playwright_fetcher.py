@@ -57,7 +57,10 @@ from privacyscope.fetchers._exceptions import (
     NavigationFailedError,
 )
 from privacyscope.fetchers._subpage import (
+    SUBPAGE_VERSION,
+    TRAMPOLINE_CATEGORIES,
     extract_subpage_candidates,
+    extract_trampoline_lgpd_candidates,
     validate_subpage_config,
 )
 
@@ -230,7 +233,11 @@ class PlaywrightFetcher(PageFetcher):
     """
 
     name: ClassVar[str] = "playwright"
-    version: ClassVar[str] = "0.1.0"
+    #: Bumped a 0.2.0 em 2026-06-07 com a integração do trampolim de Acesso
+    #: à Informação (subpage v0.3.0). Versionamento separado do detector —
+    #: VariableTests permanecem inalterados. Persistido em ``meta.json`` para
+    #: rastreabilidade da versão do fetcher usada em cada coleta.
+    version: ClassVar[str] = "0.2.0"
 
     def __init__(
         self,
@@ -589,14 +596,19 @@ class PlaywrightFetcher(PageFetcher):
     async def _extract_subpages_from_page(
         self, page: Page, base_url: str, cfg: dict
     ) -> dict[str, list[dict[str, Any]]]:
-        """page.content() -> HTML pós-render -> extractor compartilhado."""
+        """page.content() -> HTML pós-render -> extractor compartilhado.
+
+        ``base_url`` deve ser ``page.url`` (pós-redirect) para que o
+        same-host enforcement aplique sobre o netloc correto.
+        """
         html = await page.content()
         return extract_subpage_candidates(
-            html.encode("utf-8"),
+            html=html.encode("utf-8"),
             base_url=base_url,
             categories=cfg["subpage_categories"],
             max_per_category=cfg["max_per_category"],
             max_total=cfg["max_total_subpages"],
+            same_host_categories=TRAMPOLINE_CATEGORIES,
         )
 
     async def _fetch_subpages_in_context(
@@ -604,12 +616,33 @@ class PlaywrightFetcher(PageFetcher):
         page: Page,
         subpage_selection: dict[str, list[dict]],
         cfg: dict,
-    ) -> tuple[dict[str, bytes], dict[str, dict[str, str]], list[dict], list[str]]:
-        """Navega cada subpágina no MESMO context (mantém cookies pós-consent)."""
+        path_prefix: str = "/__sub_",
+        extra_network_fields: dict[str, Any] | None = None,
+    ) -> tuple[
+        dict[str, bytes], dict[str, dict[str, str]], list[dict], list[str], dict[str, str]
+    ]:
+        """Navega cada subpágina no MESMO context (mantém cookies pós-consent).
+
+        Args:
+            page: instância Playwright Page já com context aberto.
+            subpage_selection: dict ``{categoria: [items]}`` a coletar.
+            cfg: config resolvida do protocolo.
+            path_prefix: prefixo para slug de fallback quando path==/. Usar
+                ``/__sub_`` para subpáginas regulares e ``/__tramp_`` para
+                candidatos descobertos via trampolim.
+            extra_network_fields: campos extras a anexar em cada entrada do
+                network_log (ex.: ``{"via": "trampoline:acesso_informacao_gov"}``).
+
+        Returns:
+            Tupla ``(html_pages, headers_by_url, network_entries, errors,
+            url_to_path)``. O último mapa permite ao trampolim recuperar o
+            HTML de subpáginas-trampolim coletadas com sucesso.
+        """
         html_pages: dict[str, bytes] = {}
         headers_by_url: dict[str, dict[str, str]] = {}
         network_entries: list[dict] = []
         errors: list[str] = []
+        url_to_path: dict[str, str] = {}
 
         for cat, items in subpage_selection.items():
             for item in items:
@@ -628,13 +661,18 @@ class PlaywrightFetcher(PageFetcher):
                         cfg["scroll_wait_ms"],
                     )
                     html = await page.content()
-                    path = urlparse(sub_url).path or f"/__sub_{cat}"
+                    path = urlparse(sub_url).path or f"{path_prefix}{cat}"
                     if path == "/":
-                        path = f"/__sub_{cat}"
+                        path = f"{path_prefix}{cat}"
+                    # Evita colisão se o mesmo path já foi usado por subpágina
+                    # de outra categoria (caso possível em depth 2).
+                    if path in html_pages:
+                        path = f"{path_prefix}{cat}_{abs(hash(sub_url)) % 10000}"
                     html_pages[path] = html.encode("utf-8")
+                    url_to_path[sub_url] = path
                     if response is not None:
                         headers_by_url[sub_url] = dict(response.headers)
-                        network_entries.append({
+                        entry: dict[str, Any] = {
                             "url": sub_url,
                             "method": "GET",
                             "status": response.status,
@@ -642,12 +680,15 @@ class PlaywrightFetcher(PageFetcher):
                             "duration_ms": int((time.perf_counter() - t0) * 1000),
                             "content_type": response.headers.get("content-type", ""),
                             "category": cat,
-                        })
+                        }
+                        if extra_network_fields:
+                            entry.update(extra_network_fields)
+                        network_entries.append(entry)
                 except (PlaywrightTimeoutError, Exception) as e:
                     errors.append(
                         f"subpagina {sub_url}: {type(e).__name__}: {e}"
                     )
-        return html_pages, headers_by_url, network_entries, errors
+        return html_pages, headers_by_url, network_entries, errors, url_to_path
 
     # ------------------------------------------------------------------
     # ORQUESTRAÇÃO PRINCIPAL — fetch()
@@ -750,17 +791,19 @@ class PlaywrightFetcher(PageFetcher):
                 # por URL e respeita o teto global.
                 combined_html = ((pre_consent_html or "") + root_html).encode("utf-8")
                 subpage_selection = extract_subpage_candidates(
-                    combined_html,
+                    html=combined_html,
                     base_url=effective_url,
                     categories=cfg["subpage_categories"],
                     max_per_category=cfg["max_per_category"],
                     max_total=cfg["max_total_subpages"],
+                    same_host_categories=TRAMPOLINE_CATEGORIES,
                 )
 
                 # === Coleta das subpáginas no mesmo context ===
-                sub_html, sub_headers, sub_net, sub_errors = (
+                sub_html, sub_headers, sub_net, sub_errors, sub_url_to_path = (
                     await self._fetch_subpages_in_context(
-                        page, subpage_selection, cfg
+                        page, subpage_selection, cfg,
+                        path_prefix="/__sub_",
                     )
                 )
                 html_pages.update(sub_html)
@@ -768,6 +811,57 @@ class PlaywrightFetcher(PageFetcher):
                 # network_log de subpáginas vai junto via listener acima
 
                 errors.extend(sub_errors)
+
+                # === TRAMPOLIM (subpage v0.3): páginas-trampolim coletadas
+                # disparam descoberta de profundidade 2 em busca de links LGPD.
+                # Justificativa: Lei 12.527/2011 (LAI) obriga sítios públicos
+                # a expor seção de Acesso à Informação; material LGPD
+                # frequentemente reside ali (confirmado em saogoncalo.rn.gov.br
+                # e cgu.gov.br durante o B8). Orçamento próprio (max_total=3)
+                # para evitar explosão de downloads. ===
+                trampoline_selection: dict[str, list[dict[str, Any]]] = {}
+                already_collected_urls = set(sub_url_to_path.keys())
+                for src_cat in TRAMPOLINE_CATEGORIES & set(subpage_selection.keys()):
+                    for src_item in subpage_selection[src_cat]:
+                        src_url = src_item["url"]
+                        src_path = sub_url_to_path.get(src_url)
+                        if src_path is None:
+                            # Subpágina-trampolim falhou ao coletar; pula.
+                            continue
+                        src_body = sub_html.get(src_path)
+                        if src_body is None:
+                            continue
+                        depth2_cands = extract_trampoline_lgpd_candidates(
+                            html=src_body,
+                            base_url=src_url,
+                            categories=cfg["subpage_categories"],
+                            source_category=src_cat,
+                        )
+                        for lgpd_cat, items in depth2_cands.items():
+                            for item in items:
+                                cand_url = item["url"]
+                                if cand_url in already_collected_urls:
+                                    continue
+                                already_collected_urls.add(cand_url)
+                                trampoline_selection.setdefault(lgpd_cat, []).append(item)
+                                # Anota o item na subpage_selection devolvida
+                                # ao consumidor (mesma categoria LGPD-destino)
+                                # com ``discovered_via`` preservado.
+                                subpage_selection.setdefault(lgpd_cat, []).append(item)
+
+                # Coleta das subpáginas descobertas via trampolim, no mesmo
+                # context (preserva cookies pós-consent).
+                if trampoline_selection:
+                    t_html, t_headers, t_net, t_errors, _ = (
+                        await self._fetch_subpages_in_context(
+                            page, trampoline_selection, cfg,
+                            path_prefix="/__tramp_",
+                            extra_network_fields={"via": "trampoline"},
+                        )
+                    )
+                    html_pages.update(t_html)
+                    headers_by_url.update(t_headers)
+                    errors.extend(t_errors)
 
                 # === FASE 4-5 — Revoke (opt-in) ===
                 if cfg["revoke_after_consent"]:

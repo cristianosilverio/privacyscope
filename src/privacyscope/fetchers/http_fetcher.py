@@ -42,7 +42,10 @@ from privacyscope.fetchers._exceptions import (
 )
 from privacyscope.fetchers._subpage import (
     DEFAULT_SUBPAGE_CATEGORIES,
+    SUBPAGE_VERSION,
+    TRAMPOLINE_CATEGORIES,
     extract_subpage_candidates,
+    extract_trampoline_lgpd_candidates,
     validate_subpage_config,
 )
 
@@ -81,7 +84,11 @@ class HttpFetcher(PageFetcher):
     """
 
     name: ClassVar[str] = "http_simples"
-    version: ClassVar[str] = "0.1.0"
+    #: Bumped a 0.2.0 em 2026-06-07 com a integração do trampolim de Acesso
+    #: à Informação (subpage v0.3.0). Versionamento separado do detector —
+    #: VariableTests permanecem inalterados. Persistido em ``meta.json`` para
+    #: rastreabilidade da versão do fetcher usada em cada coleta.
+    version: ClassVar[str] = "0.2.0"
 
     def __init__(self, default_user_agent: str | None = None) -> None:
         self.default_user_agent = default_user_agent or DEFAULT_USER_AGENT
@@ -202,14 +209,22 @@ class HttpFetcher(PageFetcher):
     # ------------------------------------------------------------------
     async def _fetch_one(
         self, client: httpx.AsyncClient, url: str, max_bytes: int
-    ) -> tuple[bytes, dict[str, str], list[dict[str, Any]], dict[str, Any]]:
-        """GET único; devolve (body, headers, cookies_set, network_log_entry).
+    ) -> tuple[bytes, dict[str, str], list[dict[str, Any]], dict[str, Any], str]:
+        """GET único; devolve (body, headers, cookies_set, network_log_entry, final_url).
+
+        ``final_url`` é a URL pós-redirect, necessária para que o descobridor
+        de subpáginas resolva hrefs relativos e aplique same-host enforcement
+        contra o netloc correto (não o pré-redirect). Vide ``_subpage.py``
+        v0.3.0 — quando a raiz redireciona cross-domain (ex.: predize.com.br
+        → predize.com, sisdanca.com.br → sisdanca.app.br), o base_url
+        precisa refletir o destino final.
 
         Levanta ResponseTooLargeError ou httpx.HTTPError em falha.
         """
         t0 = time.perf_counter()
         async with client.stream("GET", url) as resp:
             resp.raise_for_status()
+            final_url = str(resp.url)
 
             content_length_header = resp.headers.get("content-length")
             if content_length_header:
@@ -237,13 +252,14 @@ class HttpFetcher(PageFetcher):
         duration_ms = int((time.perf_counter() - t0) * 1000)
         net_entry = {
             "url": url,
+            "final_url": final_url,
             "method": "GET",
             "status": status,
             "size_bytes": len(body),
             "duration_ms": duration_ms,
             "content_type": headers.get("content-type", ""),
         }
-        return body, headers, set_cookies, net_entry
+        return body, headers, set_cookies, net_entry, final_url
 
     # ------------------------------------------------------------------
     # Implementação principal: fetch(domain, params) -> RawEvidence
@@ -293,8 +309,10 @@ class HttpFetcher(PageFetcher):
         ) as client:
             # 3) Coleta da raiz (falha aqui é fatal)
             try:
-                root_body, root_headers, root_cookies, root_net = await self._fetch_one(
-                    client, domain.url, cfg["max_response_bytes"]
+                root_body, root_headers, root_cookies, root_net, root_final_url = (
+                    await self._fetch_one(
+                        client, domain.url, cfg["max_response_bytes"]
+                    )
                 )
             except httpx.HTTPError as e:
                 raise FetchError(f"falha ao coletar raiz {domain.url}: {type(e).__name__}: {e}") from e
@@ -304,13 +322,18 @@ class HttpFetcher(PageFetcher):
             all_cookies.extend(root_cookies)
             network_log.append(root_net)
 
-            # 4) Extração de subpáginas candidatas
+            # 4) Extração de subpáginas candidatas. Usa root_final_url
+            # (pós-redirect) como base_url — necessário para o same-host
+            # enforcement de categorias-trampolim funcionar quando o sítio
+            # redireciona para outro hostname (predize.com.br → predize.com,
+            # sisdanca.com.br → sisdanca.app.br).
             subpage_selection = extract_subpage_candidates(
-                root_body,
-                domain.url,
-                cfg["subpage_categories"],
-                cfg["max_per_category"],
-                cfg["max_total_subpages"],
+                html=root_body,
+                base_url=root_final_url,
+                categories=cfg["subpage_categories"],
+                max_per_category=cfg["max_per_category"],
+                max_total=cfg["max_total_subpages"],
+                same_host_categories=TRAMPOLINE_CATEGORIES,
             )
 
             # 5) Filtrar por robots.txt e preparar fetches concorrentes
@@ -326,6 +349,10 @@ class HttpFetcher(PageFetcher):
                     jobs.append((cat, sub_url))
 
             # 6) Fetch concorrente das subpáginas
+            # Mapeia (categoria, url) -> path em html_pages, para que o passo
+            # 6.5 (trampolim) saiba onde recuperar o HTML de cada subpágina
+            # coletada que pertença a uma categoria-trampolim.
+            sub_url_to_path: dict[str, str] = {}
             if jobs:
                 results = await asyncio.gather(
                     *[self._fetch_one(client, url, cfg["max_response_bytes"]) for _, url in jobs],
@@ -337,7 +364,7 @@ class HttpFetcher(PageFetcher):
                             f"subpagina {sub_url}: {type(result).__name__}: {result}"
                         )
                         continue
-                    sub_body, sub_headers, sub_cookies, sub_net = result
+                    sub_body, sub_headers, sub_cookies, sub_net, _sub_final = result
                     sub_path = urlparse(sub_url).path or "/"
                     # Evita colisão com a raiz se subpath também for "/"
                     if sub_path == "/":
@@ -346,6 +373,84 @@ class HttpFetcher(PageFetcher):
                     headers_by_url[sub_url] = sub_headers
                     all_cookies.extend(sub_cookies)
                     network_log.append(sub_net)
+                    sub_url_to_path[sub_url] = sub_path
+
+            # 6.5) TRAMPOLIM (subpage v0.3): páginas coletadas que pertençam a
+            # ``TRAMPOLINE_CATEGORIES`` (Acesso à Informação por força da Lei
+            # 12.527/2011) são SECUNDARIAMENTE varridas em busca de links LGPD
+            # (política, encarregado, canal_titular). Justifica-se em sítios
+            # institucionais BR que expõem material LGPD via seções de Acesso
+            # à Informação, em vez do menu principal — caso comum em .gov.br,
+            # .jus.br, autarquias, empresas estatais. Orçamento próprio
+            # (``max_total=3``) para evitar explosão de downloads.
+            trampoline_jobs: list[tuple[str, str, str]] = []
+            already_collected_urls = set(sub_url_to_path.keys())
+            for src_cat in TRAMPOLINE_CATEGORIES & set(subpage_selection.keys()):
+                for src_item in subpage_selection[src_cat]:
+                    src_url = src_item["url"]
+                    src_body = html_pages.get(sub_url_to_path.get(src_url, ""))
+                    if src_body is None:
+                        # Subpágina-trampolim não foi coletada com sucesso
+                        # (falhou ou foi bloqueada por robots). Pula.
+                        continue
+                    depth2_cands = extract_trampoline_lgpd_candidates(
+                        html=src_body,
+                        base_url=src_url,
+                        categories=cfg["subpage_categories"],
+                        source_category=src_cat,
+                    )
+                    for lgpd_cat, items in depth2_cands.items():
+                        for item in items:
+                            cand_url = item["url"]
+                            if cand_url in already_collected_urls:
+                                continue
+                            already_collected_urls.add(cand_url)
+                            trampoline_jobs.append((src_cat, lgpd_cat, cand_url))
+                            # Anota o item na subpage_selection sob a categoria
+                            # LGPD-destino, preservando ``discovered_via`` para
+                            # auditoria. VariableTests existentes consomem
+                            # ``subpage_selection[<lgpd_cat>]`` sem precisar
+                            # saber que veio via trampolim.
+                            subpage_selection.setdefault(lgpd_cat, []).append(item)
+
+            # Filtragem dos trampoline_jobs por robots.txt (mesma regra das
+            # subpáginas regulares).
+            filtered_trampoline_jobs: list[tuple[str, str, str]] = []
+            for src_cat, lgpd_cat, t_url in trampoline_jobs:
+                if robot_parser is not None and not robot_parser.can_fetch(
+                    cfg["user_agent"], t_url
+                ):
+                    errors.append(
+                        f"robots.txt proibe trampoline {t_url}"
+                    )
+                    continue
+                filtered_trampoline_jobs.append((src_cat, lgpd_cat, t_url))
+
+            # Coleta concorrente dos candidatos descobertos via trampolim.
+            if filtered_trampoline_jobs:
+                t_results = await asyncio.gather(
+                    *[
+                        self._fetch_one(client, t_url, cfg["max_response_bytes"])
+                        for _, _, t_url in filtered_trampoline_jobs
+                    ],
+                    return_exceptions=True,
+                )
+                for (src_cat, lgpd_cat, t_url), result in zip(
+                    filtered_trampoline_jobs, t_results
+                ):
+                    if isinstance(result, BaseException):
+                        errors.append(
+                            f"trampoline {t_url}: {type(result).__name__}: {result}"
+                        )
+                        continue
+                    t_body, t_headers, t_cookies, t_net, _t_final = result
+                    t_path = urlparse(t_url).path or f"/__tramp_{lgpd_cat}"
+                    if t_path in html_pages or t_path == "/":
+                        t_path = f"/__tramp_{lgpd_cat}_{src_cat}"
+                    html_pages[t_path] = t_body
+                    headers_by_url[t_url] = t_headers
+                    all_cookies.extend(t_cookies)
+                    network_log.append({**t_net, "via": f"trampoline:{src_cat}"})
 
         # 7) RawEvidence consolidada — HttpFetcher é single-shot:
         # captura cookies via Set-Cookie em uma única request sem interação JS.
