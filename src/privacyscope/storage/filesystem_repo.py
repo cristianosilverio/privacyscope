@@ -71,6 +71,7 @@ AUDIT_LOG_NAME = "audit_log.jsonl"
 META_FILENAME = "meta.json"
 HTML_ROOT_FILENAME = "html_root.html"
 HTML_SUBPAGES_DIR = "html_subpages"
+PDF_DOCS_DIR = "pdf_documents"
 HEADERS_FILENAME = "headers.json"
 NETWORK_FILENAME = "network.json"
 PHASES_DIR = "phases"
@@ -136,7 +137,7 @@ def _serialize_evidence_to_dir(evidence: RawEvidence, dest_dir: Path) -> None:
     #    phase_screenshots, screenshot). Esses voltam para arquivos separados.
     meta = evidence.model_dump(
         mode="json",
-        exclude={"html_pages", "phase_screenshots", "screenshot"},
+        exclude={"html_pages", "phase_screenshots", "screenshot", "pdf_documents"},
     )
     # screenshot principal: anotamos no meta se existe (para round-trip do get).
     meta["_has_screenshot"] = evidence.screenshot is not None
@@ -167,6 +168,19 @@ def _serialize_evidence_to_dir(evidence: RawEvidence, dest_dir: Path) -> None:
             (sub_dir / f"{fname}.html").write_bytes(body)
         (sub_dir / "_index.json").write_text(
             json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    # 3b) pdf_documents/doc_NNN.pdf — PDFs de politica baixados (custodia do original)
+    if evidence.pdf_documents:
+        pdf_dir = dest_dir / PDF_DOCS_DIR
+        pdf_dir.mkdir(exist_ok=True)
+        pindex: dict[str, str] = {}
+        for i, (url_key, body) in enumerate(evidence.pdf_documents.items(), start=1):
+            fname = f"doc_{i:03d}"
+            pindex[fname] = url_key
+            (pdf_dir / f"{fname}.pdf").write_bytes(body)
+        (pdf_dir / "_index.json").write_text(
+            json.dumps(pindex, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
     # 4) headers.json
@@ -236,6 +250,19 @@ def _deserialize_evidence_from_dir(src_dir: Path) -> RawEvidence:
             for f in sub_dir.glob("*.html"):
                 html_pages[f.stem] = f.read_bytes()
     meta["html_pages"] = html_pages
+
+    # pdf_documents reconstroi de pdf_documents/doc_NNN.pdf
+    pdf_documents: dict[str, bytes] = {}
+    pdf_dir = src_dir / PDF_DOCS_DIR
+    if pdf_dir.exists():
+        pindex_path = pdf_dir / "_index.json"
+        if pindex_path.exists():
+            pindex = json.loads(pindex_path.read_text(encoding="utf-8"))
+            for slug, url_key in pindex.items():
+                f = pdf_dir / f"{slug}.pdf"
+                if f.exists():
+                    pdf_documents[url_key] = f.read_bytes()
+    meta["pdf_documents"] = pdf_documents
 
     # phase_screenshots
     phase_screenshots: dict[str, bytes] = {}

@@ -285,6 +285,39 @@ class FallbackChain(PageFetcher):
         new_errors = list(evidence.errors) + chain_audit
         return evidence.model_copy(update={"errors": new_errors})
 
+    async def _enrich_with_pdfs(
+        self, evidence: RawEvidence, chain_audit: list[str]
+    ) -> RawEvidence:
+        """Baixa PDFs de politica descobertos (.pdf) e anexa a pdf_documents,
+        preservando a custodia do original. Fetcher-agnostico; nao-fatal."""
+        from privacyscope.fetchers._pdf import select_policy_pdf_urls
+        urls = select_policy_pdf_urls(evidence.subpage_selection)
+        if not urls:
+            return evidence
+        max_bytes = 10_000_000
+        pdfs: dict[str, bytes] = {}
+        try:
+            import httpx
+            async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
+                for u in urls:
+                    try:
+                        r = await client.get(u, headers={"User-Agent": "PrivacyScope-Research/1.0"})
+                        body = r.content
+                        ct = r.headers.get("content-type", "").lower()
+                        is_pdf = ("pdf" in ct) or u.split("?")[0].lower().endswith(".pdf")
+                        if r.status_code == 200 and is_pdf and 0 < len(body) <= max_bytes:
+                            pdfs[u] = body
+                            chain_audit.append(f"chain.pdf ok {u} bytes={len(body)}")
+                        else:
+                            chain_audit.append(f"chain.pdf skip {u} status={r.status_code} ct={ct} bytes={len(body)}")
+                    except Exception as e:
+                        chain_audit.append(f"chain.pdf err {u}: {type(e).__name__}")
+        except Exception as e:
+            chain_audit.append(f"chain.pdf client_err {type(e).__name__}")
+        if pdfs:
+            return evidence.model_copy(update={"pdf_documents": pdfs})
+        return evidence
+
     # ------------------------------------------------------------------
     # ORQUESTRAÇÃO PRINCIPAL — fetch()
     # ------------------------------------------------------------------
@@ -333,6 +366,7 @@ class FallbackChain(PageFetcher):
                 )
                 if not should_escalate:
                     chain_audit.append(f"chain.success[{i}] fetcher={fname}")
+                    evidence = await self._enrich_with_pdfs(evidence, chain_audit)
                     return self._enrich_with_audit(evidence, chain_audit)
                 chain_audit.append(
                     f"chain.escalate[{i}->{i+1}] from={fname} reason={escalate_reason}"

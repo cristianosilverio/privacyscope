@@ -160,6 +160,10 @@ class RawEvidence(BaseModel):
     fetcher_name: str = Field(..., min_length=1)
     timestamp_utc: datetime
     errors: list[str] = Field(default_factory=list)
+    pdf_documents: dict[str, bytes] = Field(
+        default_factory=dict,
+        description="URL -> bytes do PDF baixado (politica/contrato em PDF). Aditivo; vazio por padrao.",
+    )
 
     @field_validator("timestamp_utc")
     @classmethod
