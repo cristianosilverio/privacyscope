@@ -84,6 +84,10 @@ DEFAULT_LOCALE = "pt-BR"
 
 DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000
 DEFAULT_NETWORKIDLE_TIMEOUT_MS = 5_000
+# Frente B (2026-06-24): espera best-effort por conteudo substantivo no DOM
+# antes de capturar (SPA que renderiza a politica tarde — caso acheipneus).
+DEFAULT_CONTENT_MIN_CHARS = 300
+DEFAULT_CONTENT_TIMEOUT_MS = 4_000
 DEFAULT_CONSENT_CLICK_TIMEOUT_MS = 3_000
 DEFAULT_SCROLL_MAX_ITERATIONS = 5
 DEFAULT_SCROLL_WAIT_MS = 500
@@ -183,6 +187,9 @@ async def _ensure_full_render(
     networkidle_timeout_ms: int,
     scroll_max_iter: int,
     scroll_wait_ms: int,
+    *,
+    content_min_chars: int = DEFAULT_CONTENT_MIN_CHARS,
+    content_timeout_ms: int = DEFAULT_CONTENT_TIMEOUT_MS,
 ) -> None:
     """Força DOM completo — networkidle + scroll progressivo + networkidle final.
 
@@ -197,6 +204,18 @@ async def _ensure_full_render(
         await page.wait_for_load_state("networkidle", timeout=networkidle_timeout_ms)
     except PlaywrightTimeoutError:
         pass
+
+    # Frente B: espera best-effort por conteudo substantivo (SPA tardia).
+    # Retorna assim que o body tiver >= content_min_chars; no-op se ja houver.
+    if content_min_chars and content_timeout_ms:
+        try:
+            await page.wait_for_function(
+                "(n) => !!(document.body && document.body.innerText && document.body.innerText.length >= n)",
+                arg=content_min_chars,
+                timeout=content_timeout_ms,
+            )
+        except Exception:
+            pass
 
     last_h = await page.evaluate("document.body.scrollHeight")
     for _ in range(scroll_max_iter):

@@ -65,6 +65,11 @@ DEFAULT_SUBPAGE_CATEGORIES: dict[str, list[str]] = {
         # filtrando falsos positivos na 2a etapa.
         r"\bprivacidade\b",
         r"\bprivacy\b",
+        # Frente C (2026-06-24, pos-rotulagem 20): link rotulado "Politicas"
+        # (plural, generico) com a politica embutida. FN observado em
+        # matrizskateshop ("Politicas e Formas de Pagamentos" -> /p/termos).
+        # Baixa precisao isolada; o VariableTest qualifica por conteudo.
+        r"\bpol[i\u00ed]ticas\b",
     ],
     "termos_uso": [
         r"termos[\s_\-]*de[\s_\-]*uso",
