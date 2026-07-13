@@ -290,8 +290,28 @@ class FallbackChain(PageFetcher):
     ) -> RawEvidence:
         """Baixa PDFs de politica descobertos (.pdf) e anexa a pdf_documents,
         preservando a custodia do original. Fetcher-agnostico; nao-fatal."""
-        from privacyscope.fetchers._pdf import select_policy_pdf_urls
-        urls = select_policy_pdf_urls(evidence.subpage_selection)
+        from urllib.parse import urljoin
+
+        from privacyscope.fetchers._pdf import (
+            select_policy_pdf_urls,
+            select_policy_pdf_urls_from_html,
+        )
+
+        base = str(getattr(evidence.domain, "url", "") or "")
+        # Fonte 1: subpaginas CATEGORIZADAS que ja sao .pdf.
+        urls: list[str] = []
+        for u in select_policy_pdf_urls(evidence.subpage_selection):
+            absolute = urljoin(base, u) if base else u
+            if absolute not in urls:
+                urls.append(absolute)
+        # Fonte 2: links .pdf SOLTOS no HTML armazenado. Padrao dominante em
+        # sitios publicos, que publicam a politica como documento formal
+        # (Portaria/Resolucao/Ato) em PDF — link comum, nunca categorizado
+        # como subpagina. Resolve relativas e aceita host externo.
+        for u in select_policy_pdf_urls_from_html(evidence.html_pages, base):
+            if u not in urls:
+                urls.append(u)
+        urls = urls[:8]
         if not urls:
             return evidence
         max_bytes = 10_000_000
