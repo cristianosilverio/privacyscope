@@ -1,0 +1,3 @@
+{"event": "manifest_updated", "manifest_sha256": "4c61d32a89810422220b8a0b975e62290172ddbbbbda154ea5c804ed55caa5e4", "tar_filename": "20260519T190459Z__a5e5035f-5776-4096-a1ba-a4698b158d3f__www.gov.br.tar.gz", "ts": "2026-05-19T19:04:59.709066+00:00"}
+{"event": "manifest_updated", "manifest_sha256": "78f7aaf91d85639903d32961fcc0d0752377dbe756d7b56df3a1dbd620fe6e32", "tar_filename": "20260519T190529Z__a5e5035f-5776-4096-a1ba-a4698b158d3f__www.serpro.gov.br.tar.gz", "ts": "2026-05-19T19:05:29.983222+00:00"}
+{"event": "manifest_updated", "manifest_sha256": "4686565efee373cc9fe0f21a3784b3f4c3391d94f5bbf2779cc9aa55189291be", "tar_filename": "20260519T190557Z__a5e5035f-5776-4096-a1ba-a4698b158d3f__www.uol.com.br.tar.gz", "ts": "2026-05-19T19:05:59.136423+00:00"}
