@@ -119,17 +119,16 @@ def select_policy_pdf_urls(subpage_selection, categories=(
     return urls
 
 
-# --- Qualificacao de um PDF como candidato a POLITICA DE PRIVACIDADE DO SITIO ---
-#
-# Tres filtros, nesta ordem. O objetivo e trazer a politica do PROPRIO sitio e
-# NAO poluir a evidencia com documentos de terceiros — o que, alem de desperdicio,
-# e risco de rotulagem: o anotador pode rotular com base na politica alheia
-# (caso ja observado: politica da Cloudflare capturada como se fosse do sitio).
+# Qualificacao de um PDF como candidato a politica de privacidade do proprio
+# sitio. Tres filtros, aplicados em sequencia. Alem do desperdicio de banda,
+# admitir documento de terceiro na evidencia induz erro de rotulagem — situacao
+# observada na coleta, com a politica da Cloudflare capturada como se fosse do
+# sitio analisado.
 
-# (1) POSITIVO — o documento precisa ser especificamente sobre privacidade /
-# protecao de dados. "politica" sozinho NAO basta: casaria com "politica
-# nacional do idoso", "politica de compras", "politica de qualidade",
-# "politica de sustentabilidade", "politicas publicas" etc.
+# (1) Criterio positivo: o documento deve versar especificamente sobre
+# privacidade ou protecao de dados. O termo "politica" isolado e insuficiente,
+# pois abrange "politica nacional do idoso", "politica de compras", "politica
+# de qualidade", "politica de sustentabilidade" e "politicas publicas".
 _PRIVACY_KW = re.compile(
     r"(privacidad|privacy|prote[c\u00e7][a\u00e3]o[\s_%+.\-]*de[\s_%+.\-]*dados"
     r"|lgpd|dados[\s_%+.\-]*pessoa|aviso[\s_%+.\-]*de[\s_%+.\-]*privac"
@@ -137,9 +136,9 @@ _PRIVACY_KW = re.compile(
     re.IGNORECASE,
 )
 
-# (2) NEGATIVO — material de REFERENCIA/EDUCATIVO. Guias da ANPD/CGU/CGE,
-# cartilhas, manuais e e-books sao publicados por terceiros e linkados como
-# apoio; nunca sao a politica do sitio.
+# (2) Criterio negativo: material de referencia. Guias da ANPD, CGU e CGE,
+# cartilhas, manuais e e-books sao publicados por terceiros e referenciados
+# como apoio, nao constituindo a politica do sitio.
 _REFERENCE_KW = re.compile(
     r"(guia|cartilha|manual|e-?book|apresenta|boas[\s_%+.\-]*pr[a\u00e1]ticas"
     r"|gloss[a\u00e1]rio|cartaz|folder|curso|treinamento|palestra"
@@ -147,7 +146,7 @@ _REFERENCE_KW = re.compile(
     re.IGNORECASE,
 )
 
-# (3) NEGATIVO — hosts de politica de TERCEIROS (nunca a do sitio analisado).
+# (3) Criterio negativo: hosts de politicas de terceiros.
 _THIRD_PARTY_HOST = re.compile(r"(gstatic\.com|\.adobe\.com)", re.IGNORECASE)
 
 
@@ -155,11 +154,11 @@ def _normaliza_href(href: str) -> str:
     """Normaliza href malformado com barra invertida (observado em pcd.com.br:
     'https://x/\\public\\privacidade-termos\\pol.pdf').
 
-    ARMADILHA: apos trocar '\\' por '/', um href como '/\\public' vira '//public',
-    que urljoin trata como URL PROTOCOLO-RELATIVA e SEQUESTRA o host — o
-    download iria para 'https://public/...'. Por isso colapsamos as barras
-    iniciais, mas somente quando o href original NAO era protocolo-relativo
-    ('//cdn.exemplo.com/x.pdf' e legitimo e deve ser preservado).
+    A substituicao de '\\' por '/' converte '/\\public' em '//public', forma que
+    urljoin interpreta como URL protocolo-relativa, substituindo o host e
+    direcionando o download para 'https://public/...'. As barras iniciais sao
+    portanto colapsadas, exceto quando o href original ja era protocolo-relativo,
+    caso legitimo que deve ser preservado ('//cdn.exemplo.com/x.pdf').
     """
     if "\\" not in href:
         return href
@@ -171,7 +170,7 @@ def _normaliza_href(href: str) -> str:
 
 
 def _qualifica_pdf_politica(href: str, texto: str) -> bool:
-    """True se o PDF e candidato plausivel a politica de privacidade DO SITIO."""
+    """True se o PDF constitui candidato plausivel a politica do proprio sitio."""
     alvo = f"{href} {texto or ''}"
     if not _PRIVACY_KW.search(alvo):
         return False
@@ -217,10 +216,9 @@ def select_policy_pdf_urls_from_html(html_pages, base_url, *, max_urls=8):
     escapava do download.
 
     Corrige tres modos de falha observados:
-      (a) link .pdf solto dentro da pagina (nao categorizado);
-      (b) URL RELATIVA (e.g. '/images/PDF/Politica_de_Protecao_de_Dados.pdf'),
-          agora resolvida contra ``base_url``;
-      (c) HOST EXTERNO (politica hospedada em storage de terceiros).
+      (a) link .pdf solto na pagina, nao categorizado como subpagina;
+      (b) URL relativa, resolvida contra ``base_url``;
+      (c) host externo, no caso de politica hospedada em storage de terceiros.
 
     Pura: nao faz rede. Args:
         html_pages: dict ``{path: bytes}`` como em ``RawEvidence.html_pages``.

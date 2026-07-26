@@ -298,16 +298,16 @@ class FallbackChain(PageFetcher):
         )
 
         base = str(getattr(evidence.domain, "url", "") or "")
-        # Fonte 1: subpaginas CATEGORIZADAS que ja sao .pdf.
+        # Fonte 1: subpaginas categorizadas cuja URL ja e um .pdf.
         urls: list[str] = []
         for u in select_policy_pdf_urls(evidence.subpage_selection):
             absolute = urljoin(base, u) if base else u
             if absolute not in urls:
                 urls.append(absolute)
-        # Fonte 2: links .pdf SOLTOS no HTML armazenado. Padrao dominante em
-        # sitios publicos, que publicam a politica como documento formal
-        # (Portaria/Resolucao/Ato) em PDF — link comum, nunca categorizado
-        # como subpagina. Resolve relativas e aceita host externo.
+        # Fonte 2: links .pdf presentes no HTML armazenado. Corresponde ao padrao
+        # predominante em sitios publicos, que publicam a politica como documento
+        # formal (Portaria, Resolucao, Ato) referenciado por link comum, nunca
+        # categorizado como subpagina. Resolve relativas e admite host externo.
         for u in select_policy_pdf_urls_from_html(evidence.html_pages, base):
             if u not in urls:
                 urls.append(u)

@@ -14,6 +14,9 @@ polars>=0.20
 pyarrow>=15.0
 scikit-learn>=1.4
 joblib>=1.3
+# Inferencia estatistica (perfil da verossimilhanca, McNemar) e planilhas de rotulagem.
+scipy>=1.11
+openpyxl>=3.1
 # Frente A (politica em PDF): extracao de texto + OCR de reserva.
 # OCR exige o binario Tesseract no sistema + idioma: apt install tesseract-ocr tesseract-ocr-por
 pymupdf>=1.24

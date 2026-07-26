@@ -188,7 +188,7 @@ class Orchestrator:
                 logger.info("collected %s -> %s", domain.url, Path(ref.path).name)
                 self._analyze_evidence(evidence, run_id)
             except Exception as exc:
-                logger.error("falha em %s: %s", domain.url, exc, exc_info=True)
+                logger.error("falha em %s: %s", domain.url, exc, exc_info=False)
                 errors += 1
         self.store.finish_run(run_id, errors_count=errors)
         return run_id
@@ -208,7 +208,7 @@ class Orchestrator:
                 evidence = await self._collect_one(domain)
                 self.repo.put(evidence, run_id, protocol_version_hash=self.protocol_version_hash)
             except Exception as exc:
-                logger.error("falha em %s: %s", domain.url, exc, exc_info=True)
+                logger.error("falha em %s: %s", domain.url, exc, exc_info=False)
                 errors += 1
         self.store.finish_run(run_id, errors_count=errors)
         return run_id

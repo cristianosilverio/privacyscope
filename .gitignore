@@ -78,14 +78,29 @@ data/**/*.tar.gz
 /rotulagem_*.csv.bak[0-9]
 /rotulagem_*.csv.bak*
 *.xlsx.bak*
+# Devolutivas de rotulagem, sob qualquer nome: reproduzem as mesmas colunas de
+# evidencia e, com elas, contatos de encarregado. Verificado: a devolutiva do
+# segundo avaliador reune 29 enderecos de correio e 4 telefones.
+/kappa_*.csv
+/kappa_*.xlsx
+/completude_*.csv
+/completude_*.xlsx
+*_avaliador*.csv
+*_avaliador*.xlsx
 
 # ---------------------------------------------------------------------------
 # SAIDAS
 # ---------------------------------------------------------------------------
 # outputs/ e versionado: sao CSVs pequenos e importam para a reprodutibilidade.
-# Ficam de fora apenas binarios de modelo.
+# Ficam de fora binarios de modelo e derivados que reproduzem texto coletado.
 outputs/*.pkl
 outputs/*.joblib
+# Conjunto em nivel de segmento: 26 MB de texto integral das politicas, com 200
+# enderecos de correio e 123 telefones. E derivado reproduzivel a partir dos
+# pacotes de captura por scripts/segmentar_politicas.py; versiona-se o script, e
+# nao o texto de terceiros.
+outputs/segmentos_*.csv
+outputs/*_publica.csv.bak*
 
 # Credenciais
 credentials*.json

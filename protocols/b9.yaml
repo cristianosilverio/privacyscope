@@ -691,8 +691,8 @@ fetcher:
           respect_robots_txt: true
           max_per_category: 2
           max_total_subpages: 6
-          connect_timeout_s: 10
-          read_timeout_s: 30
+          connect_timeout_s: 8
+          read_timeout_s: 15
         escalate_if:
           - signal: cookies_pre_consent_zero
           - signal: html_root_smaller_than_bytes
@@ -707,9 +707,11 @@ fetcher:
           headless: true
           phase_screenshots: true
           revoke_after_consent: false
+          navigation_timeout_ms: 15000
           scroll_max_iterations: 3
           max_per_category: 2
           max_total_subpages: 6
+    max_retries_per_fetcher: 0
     abort_on:
       - exception: RobotsDisallowedError
 

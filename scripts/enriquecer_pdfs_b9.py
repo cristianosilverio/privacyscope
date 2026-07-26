@@ -1,38 +1,39 @@
 # -*- coding: utf-8 -*-
-"""Remediacao PONTUAL da coleta b9: baixa os PDFs de politica cujos links ja
-estao na evidencia coletada, mas que o fetcher nao baixou (bug da Front A,
-corrigido em fetchers/_pdf.py + fallback_chain.py).
+"""Enriquecimento da coleta b9 com os PDFs de politica referenciados na evidencia.
 
-POR QUE UM ARTEFATO SEPARADO (append-only)
-------------------------------------------
-Os tarballs de data/b9/raw estao sob cadeia de custodia: cada um tem SHA-256
-registrado em manifest.jsonl e conferido por manifest_audit.verify_manifest().
-Gravar os PDFs DENTRO dos tarballs quebraria todos os hashes e destruiria a
-custodia. Por isso este script:
+Sitios institucionais, sobretudo no setor publico, publicam a politica como
+documento formal — Portaria, Resolucao, Ato — em PDF referenciado por um ``<a
+href>`` comum dentro de uma pagina. Tais links nao sao categorizados como
+subpagina, e por isso escapavam ao download na coleta original. A correcao no
+framework consta de ``fetchers/_pdf.py`` e ``fetchers/fallback_chain.py``; este
+script remedia a coleta ja realizada, sem recoleta.
 
-  * NUNCA escreve nos tarballs originais (abre em modo leitura);
-  * verifica a integridade ANTES de enriquecer;
-  * grava os PDFs numa arvore NOVA (data/b9/pdf_enrichment/) com manifest e
-    hashes PROPRIOS, cada entrada REFERENCIANDO o hash da evidencia de origem.
+Preservacao da cadeia de custodia. Os tarballs de ``data/b9/raw`` estao sob
+custodia: cada um possui SHA-256 registrado em ``manifest.jsonl`` e conferido por
+``manifest_audit.verify_manifest()``. Gravar os PDFs no interior dos tarballs
+invalidaria todos os hashes. O procedimento adotado, portanto:
 
-Resultado: o original permanece byte-identico e verificavel; o enriquecimento e
-um derivado datado, hasheado e rastreavel ("o PDF X foi baixado em <data> a
-partir de um link encontrado na evidencia Y, sha256=Z"). E o que ISO/IEC 27037
-e Casey (2011) prescrevem: nunca alterar o original, produzir derivado
-documentado.
+  * nao escreve nos tarballs originais, abertos em modo leitura;
+  * verifica a integridade da colecao antes de qualquer operacao;
+  * grava os PDFs em arvore propria (``data/b9/pdf_enrichment/``), com manifest e
+    hashes proprios, cada entrada referenciando o hash da evidencia de origem.
 
-ESTE SCRIPT E TRANSITORIO. Em coletas NOVAS o problema nao existe: o fetcher
-corrigido anexa o PDF a RawEvidence.pdf_documents e o FileSystemRepository o
-serializa DENTRO do proprio tar.gz, sob o MESMO hash do pacote. Um so pacote,
-uma so custodia.
+O original permanece byte-identico e verificavel, e o enriquecimento constitui
+derivado datado, hasheado e rastreavel: consigna-se que determinado PDF foi
+obtido em certa data a partir de link presente em evidencia de hash conhecido. O
+procedimento observa a ABNT NBR ISO/IEC 27037 e Casey (2011) quanto a nao alterar
+o original e produzir derivado documentado.
 
-Uso (na maquina do usuario, que tem rede):
-    cd C:\\Dev\\privacyscope
-    python scripts/enriquecer_pdfs_b9.py                # executa
-    python scripts/enriquecer_pdfs_b9.py --dry-run      # so lista o que baixaria
-    python scripts/enriquecer_pdfs_b9.py --data data/b9 # outra coleta
+O script e transitorio. Em coletas posteriores o problema nao se coloca: o
+fetcher corrigido anexa o PDF a ``RawEvidence.pdf_documents`` e o
+``FileSystemRepository`` o serializa no proprio tar.gz, sob o mesmo hash do
+pacote — um unico artefato, uma unica custodia.
 
-Resumivel: pula sitios ja enriquecidos. Requer: httpx, pymupdf (e Tesseract p/ OCR).
+Execucao retomavel: sitios ja enriquecidos sao ignorados.
+
+Uso:
+    python scripts/enriquecer_pdfs_b9.py --dry-run
+    python scripts/enriquecer_pdfs_b9.py
 """
 from __future__ import annotations
 
@@ -64,8 +65,8 @@ def sha256_bytes(b: bytes) -> str:
 
 
 def ler_evidencia(tar_path: Path):
-    """Le o tarball em MODO LEITURA. Devolve (html_pages, subpage_selection).
-    Nunca escreve. html_pages: {path: bytes} como em RawEvidence.html_pages."""
+    """Le o tarball em modo leitura, sem escrita. Devolve (html_pages,
+    subpage_selection), com html_pages no formato de RawEvidence.html_pages."""
     html_pages: dict[str, bytes] = {}
     subpage_selection: dict = {}
     index: dict = {}
@@ -116,12 +117,12 @@ def main() -> int:
         print(f"ERRO: manifest nao encontrado em {manifest_path}")
         return 2
 
-    # 1) INTEGRIDADE DO ORIGINAL — antes de qualquer coisa.
+    # 1) Integridade da colecao original, previamente a qualquer operacao.
     if not args.skip_verify:
         from privacyscope.storage.manifest_audit import verify_manifest
         print("Verificando integridade da evidencia original...")
         rep = verify_manifest(data_dir)
-        # ManifestAuditReport: campos sao CONTAGENS (int); all_valid e property.
+        # ManifestAuditReport expoe contagens inteiras; all_valid e property.
         print(
             f"  total={rep.total_entries} verificadas={rep.verified} "
             f"ausentes={rep.missing} corrompidas={rep.corrupted}"
@@ -134,9 +135,9 @@ def main() -> int:
             return 3
         if rep.missing:
             print(f"  AVISO: {rep.missing} entrada(s) do manifest sem arquivo em disco; serao puladas.")
-        # Nao bloqueamos em all_valid: ele tambem exige audit_log_consistent, que
-        # pode ser False por motivos alheios a adulteracao. O que importa aqui e
-        # que nenhum tarball a ser LIDO esteja corrompido.
+        # A property all_valid exige tambem audit_log_consistent, que pode ser
+        # falso por motivos alheios a adulteracao. O criterio de aborto e a
+        # existencia de tarball corrompido entre os que serao lidos.
 
     entradas = [json.loads(l) for l in manifest_path.read_text(encoding="utf-8").splitlines() if l.strip()]
     print(f"Evidencias no manifest: {len(entradas)}")
@@ -174,7 +175,7 @@ def main() -> int:
                 falhas += 1
                 continue
 
-            # 2) SELECAO — mesma logica pura do fetcher corrigido (fonte unica de verdade).
+            # 2) Selecao pela mesma funcao pura do fetcher, fonte unica de verdade.
             from urllib.parse import urljoin
             urls: list[str] = []
             for u in select_policy_pdf_urls(subsel):
@@ -195,7 +196,7 @@ def main() -> int:
                 feitos += 1
                 continue
 
-            # 3) DOWNLOAD + EXTRACAO
+            # 3) Download e extracao de texto.
             docs = []
             for i, u in enumerate(urls, start=1):
                 try:
@@ -229,12 +230,12 @@ def main() -> int:
             if not docs:
                 continue
 
-            # 4) CUSTODIA DO DERIVADO: referencia explicita ao original.
+            # 4) Custodia do derivado, com referencia explicita ao original.
             meta = {
                 "host": host,
                 "domain_url": base_url,
                 "origin_tar": tar_name,
-                "origin_sha256": origin_sha,          # <- amarra ao original imutavel
+                "origin_sha256": origin_sha,          # vinculo com o original imutavel
                 "downloaded_at_utc": datetime.now(timezone.utc).isoformat(),
                 "selector_version": "select_policy_pdf_urls_from_html/1.0",
                 "documentos": docs,
@@ -265,7 +266,7 @@ def main() -> int:
         print(f"Sitios enriquecidos: {feitos} | PDFs baixados: {baixados} | ja feitos: {ja} | falhas: {falhas}")
         print(f"Saida: {out_dir}")
         print(f"Manifest do derivado: {out_manifest}")
-        print("Originais em data/*/raw: INALTERADOS (hashes continuam validos).")
+        print("Os originais em data/*/raw permanecem inalterados; os hashes seguem validos.")
     return 0
 
 
