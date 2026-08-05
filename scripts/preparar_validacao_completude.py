@@ -98,29 +98,58 @@ def main() -> int:
         if l["site_id"] in escolhidos:
             por_sitio[l["site_id"]][int(l["segmento_id"])] = l["texto"]
 
-    wb = openpyxl.Workbook()
-    ws = wb.active; ws.title = "Marcacao exaustiva"
-    cab = ["site_id", "segmento_id", "texto"] + [ROTULO[v] for v in VARIAVEIS] + ["obs"]
-    ws.append(cab)
-    for c in range(1, len(cab) + 1):
-        ws.cell(1, c).font = Font(bold=True)
-        ws.cell(1, c).fill = PatternFill("solid", fgColor="DDDDDD")
-    total = 0
-    for sitio in escolhidos:
-        for sid in sorted(por_sitio[sitio]):
-            ws.append([sitio, sid, por_sitio[sitio][sid], "", "", "", ""])
-            total += 1
-    ws.column_dimensions["A"].width = 28
-    ws.column_dimensions["B"].width = 11
-    ws.column_dimensions["C"].width = 96
-    for i, _ in enumerate(VARIAVEIS):
-        ws.column_dimensions[get_column_letter(4 + i)].width = 15
-    ws.column_dimensions[get_column_letter(4 + len(VARIAVEIS))].width = 40
-    for linha in ws.iter_rows(min_row=2, min_col=3, max_col=3):
-        linha[0].alignment = Alignment(wrap_text=True, vertical="top")
-    ws.freeze_panes = "A2"
+    # Uma aba por politica. Percorrer sete mil linhas numa aba unica dificulta
+    # retomar o trabalho e obscurece o progresso; a separacao permite concluir uma
+    # politica por sessao, o que preserva a atencao ao longo da tarefa.
+    from openpyxl.worksheet.datavalidation import DataValidation
 
-    wi = wb.create_sheet("Instrucoes")
+    wb = openpyxl.Workbook()
+    controle = wb.active; controle.title = "Controle"
+    controle.append(["Política", "Segmentos", "Positiva em", "Concluída (sim)"])
+    for c in range(1, 5):
+        controle.cell(1, c).font = Font(bold=True)
+        controle.cell(1, c).fill = PatternFill("solid", fgColor="DDDDDD")
+
+    cab = ["segmento_id", "texto"] + [ROTULO[v] for v in VARIAVEIS] + ["obs"]
+    total = 0
+    for ordem, sitio in enumerate(sorted(escolhidos, key=lambda s: len(por_sitio[s])), 1):
+        aba = f"{ordem:02d} {sitio[:26]}"
+        ws = wb.create_sheet(aba)
+        ws.append(cab)
+        for c in range(1, len(cab) + 1):
+            ws.cell(1, c).font = Font(bold=True)
+            ws.cell(1, c).fill = PatternFill("solid", fgColor="DDDDDD")
+        n = 0
+        for sid in sorted(por_sitio[sitio]):
+            ws.append([sid, por_sitio[sitio][sid], "", "", "", ""])
+            n += 1; total += 1
+        ws.column_dimensions["A"].width = 11
+        ws.column_dimensions["B"].width = 104
+        for i, _ in enumerate(VARIAVEIS):
+            ws.column_dimensions[get_column_letter(3 + i)].width = 14
+        ws.column_dimensions[get_column_letter(3 + len(VARIAVEIS))].width = 34
+        for linha in ws.iter_rows(min_row=2, min_col=2, max_col=2):
+            linha[0].alignment = Alignment(wrap_text=True, vertical="top")
+        ws.freeze_panes = "A2"
+        # lista suspensa nas colunas de marcacao, para dispensar digitacao
+        dv = DataValidation(type="list", formula1='"1"', allow_blank=True)
+        ws.add_data_validation(dv)
+        for i, _ in enumerate(VARIAVEIS):
+            col = get_column_letter(3 + i)
+            dv.add(f"{col}2:{col}{n + 1}")
+        pos = ", ".join(ROTULO[v] for v in VARIAVEIS if R[sitio].get(v) == "1")
+        controle.append([sitio, n, pos or "—", ""])
+
+    controle.append([])
+    controle.append(["TOTAL", total, "", ""])
+    controle.cell(controle.max_row, 1).font = Font(bold=True)
+    controle.column_dimensions["A"].width = 30
+    controle.column_dimensions["B"].width = 12
+    controle.column_dimensions["C"].width = 42
+    controle.column_dimensions["D"].width = 18
+    controle.freeze_panes = "A2"
+
+    wi = wb.create_sheet("Instrucoes", 1)
     for t in [
         "Validacao da completude da anotacao de trechos",
         "",
@@ -132,10 +161,16 @@ def main() -> int:
         "passagem. Aqui a pergunta e outra: quais de TODOS estes segmentos sao relevantes.",
         "",
         "COMO PREENCHER",
-        "Percorra os segmentos de cada politica e marque 1 nas colunas das variaveis para",
-        "as quais o segmento e relevante. Deixe em branco quando nao for. Um segmento pode",
-        "ser relevante para mais de uma variavel, e a maioria nao sera relevante para",
-        "nenhuma.",
+        "Ha uma aba por politica, ordenadas da menor para a maior, e uma aba de Controle",
+        "com o tamanho de cada uma. Percorra os segmentos e marque 1 nas colunas das",
+        "variaveis para as quais o segmento e relevante. Deixe em branco quando nao for.",
+        "Um segmento pode ser relevante para mais de uma variavel, e a maioria nao sera",
+        "relevante para nenhuma.",
+        "",
+        "As tres primeiras abas somam menos de cem segmentos e servem para calibrar o",
+        "ritmo. A ultima concentra um terco do total: convem reserva-la para sessao",
+        "propria. Registre na aba de Controle a conclusao de cada politica, para poder",
+        "interromper e retomar sem perder o ponto.",
         "",
         "REGRAS",
         "1. NAO consulte a rotulagem original nem as colunas de evidencia. A transcricao",
