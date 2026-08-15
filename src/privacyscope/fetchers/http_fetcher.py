@@ -156,8 +156,15 @@ class HttpFetcher(PageFetcher):
         parsed = urlparse(base_url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
         try:
+            # O padrao do httpx e 20 redirecionamentos. Ha sitios cujo /robots.txt
+            # redireciona para si mesmo, e o laco so termina no teto: foram 21
+            # requisicoes ao mesmo recurso em unimeduberaba.com.br, na coleta de
+            # 15/08/2026. Cinco saltos cobrem redirecionamento legitimo (http->https,
+            # apex->www, e ainda folga) e transformam o laco em erro registrado, em
+            # lugar de vinte requisicoes silenciosas contra a origem.
             async with httpx.AsyncClient(
-                timeout=timeout_s, follow_redirects=True, headers={"User-Agent": user_agent}
+                timeout=timeout_s, follow_redirects=True, max_redirects=5,
+                headers={"User-Agent": user_agent}
             ) as client:
                 resp = await client.get(robots_url)
             if resp.status_code == 200:
@@ -173,6 +180,12 @@ class HttpFetcher(PageFetcher):
                 parser.parse(["User-agent: *", "Disallow: /"])
                 return parser, f"robots.txt {robots_url}: status {resp.status_code} (5xx; disallow per RFC 9309)"
             return None, f"robots.txt {robots_url}: status {resp.status_code} (ignorado)"
+        except httpx.TooManyRedirects:
+            # Laco de redirecionamento nao e "robots.txt indisponivel por acaso": e
+            # defeito de configuracao da origem, e precisa aparecer nomeado no
+            # registro para nao ser lido como intermitencia de rede.
+            return None, (f"robots.txt {robots_url}: laco de redirecionamento "
+                          f"(>5 saltos); tratado como ausente, allow-all per RFC 9309")
         except httpx.HTTPError as e:
             return None, f"robots.txt {robots_url}: {type(e).__name__}: {e} (ignorado)"
 
