@@ -52,6 +52,7 @@ from privacyscope.storage.filesystem_repo import FileSystemRepository
 from privacyscope.storage.sqlite_store import SQLiteResultStore
 from privacyscope.tests.banner_cookies import BannerCookiesTest
 from privacyscope.tests.canal_titular import CanalTitularTest
+from privacyscope.tests.canal_titular_ml import CanalTitularMLTest
 from privacyscope.tests.politica_privacidade import PoliticaPrivacidadeTest
 from privacyscope.tests.ml_texto import (
     DireitosTitularExplicadosTest, FinalidadeEspecificadaTest,
@@ -84,6 +85,10 @@ VARIABLE_TESTS: dict[str, Type[VariableTest]] = {
     "banner_cookies": BannerCookiesTest,
     "politica_privacidade": PoliticaPrivacidadeTest,
     "canal_titular": CanalTitularTest,
+    # ACRESCENTA o regime supervisionado sem retirar o determinístico: os
+    # resultados reportam os dois para esta variavel, e o arcabouco precisa
+    # poder produzir ambos sob declaracao no protocolo.
+    "canal_titular_ml": CanalTitularMLTest,
     # Variaveis textuais por classificacao supervisionada. Uma implementacao,
     # tres entradas: o orquestrador resolve nome -> classe e instancia sem
     # argumentos, de sorte que a identidade da variavel vive na classe.

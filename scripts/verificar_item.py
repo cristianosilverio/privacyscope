@@ -556,12 +556,147 @@ def item_5(rel: Relatorio, verboso: bool) -> None:
     except ArtefatoCorrompido:
         rel.afere(True, "recusa: artefato estruturado lido como de texto")
 
+# ===========================================================================
+def item_6(rel: Relatorio, verboso: bool) -> None:
+    """Plugin do canal do titular por classificacao.
+
+    O que se exige, e por que:
+
+      DOIS REGIMES  O detector por regra permanece registrado. Substitui-lo
+                  impediria a comparacao que os resultados reportam.
+      ATRIBUTOS IDENTICOS  Sobre material real e partindo de RawEvidence, o plugin
+                  extrai exatamente os atributos que a matriz do ajuste registra.
+                  A ordem de concatenacao das paginas difere da do tarball, e os
+                  atributos de proximidade dependem de distancia em caracteres:
+                  esta e a conferencia de que a diferenca nao produz efeito.
+      PROBABILIDADE  Coincide com a aplicacao direta da equacao publicada.
+      PARES  Artefato de outra variavel, extrator de outra versao e artefato de
+                  texto sao todos recusados.
+    """
+    import csv
+    import glob
+    import json
+    import os
+    import re
+    import tarfile
+    from datetime import datetime, timezone
+
+    import numpy as np
+    from privacyscope.core.plugin_registry import resolve
+    from privacyscope.core.types import Domain, RawEvidence
+    from privacyscope.features.canal_titular import ATRIBUTOS, VERSAO_EXTRATOR
+    from privacyscope.models.artefato import ArtefatoCorrompido, le_canal
+    from privacyscope.tests.canal_titular_ml import CanalTitularMLTest
+
+    regra = resolve("variable_tests", "canal_titular")
+    ml = resolve("variable_tests", "canal_titular_ml")
+    rel.afere(regra is not ml and regra.variable_name == ml.variable_name,
+              "os dois regimes convivem no registro",
+              f"{regra.__name__} (regra) e {ml.__name__} (classificacao)")
+
+    modelos = REPO / "models"
+    manifesto = modelos / "MANIFESTO.csv"
+    if not manifesto.exists():
+        rel.afere(False, "artefato exportado",
+                  "rode antes: python scripts/exportar_modelo_canal.py")
+        return
+    with manifesto.open(encoding="utf-8", newline="") as fh:
+        reg = {r["variavel"]: r for r in csv.DictReader(fh, delimiter=";")}
+    if "tem_canal_titular" not in reg:
+        rel.afere(False, "artefato do canal no manifesto"); return
+    linha = reg["tem_canal_titular"]
+    arq = str(modelos / linha["arquivo"])
+    a = le_canal(modelos / linha["arquivo"], linha["sha256"])
+    params = {"modelo_file": arq, "modelo_sha256": linha["sha256"]}
+
+    matriz = REPO / "outputs" / "features_canal_N200.csv"
+    csv.field_size_limit(10 ** 7)
+    with matriz.open(encoding="utf-8", newline="") as fh:
+        M = {r["site_id"]: r for r in csv.DictReader(fh, delimiter=";")}
+    enriquecimento = REPO / "data" / "b9" / "pdf_enrichment"
+
+    t = CanalTitularMLTest()
+    conferidos = divergentes = 0
+    exemplos, difs = [], []
+    for tar in sorted(glob.glob(str(REPO / "data" / "b9" / "raw" / "*.tar.gz")))[:40]:
+        host = os.path.basename(tar).split("__")[-1].replace(".tar.gz", "")
+        if host not in M:
+            continue
+        paginas, meta = {}, {}
+        with tarfile.open(tar, "r:gz") as tf:
+            for m in tf.getmembers():
+                n = m.name
+                if n.endswith("/html_root.html"):
+                    paginas["/"] = tf.extractfile(m).read()
+                elif "/html_subpages/" in n and n.endswith(".html"):
+                    paginas["/" + os.path.basename(n)] = tf.extractfile(m).read()
+                elif n.endswith("/meta.json"):
+                    meta = json.load(tf.extractfile(m))
+        # Os PDF entram como BYTES, que e a rota de producao: o plugin extrai o
+        # texto com a rotina do coletor. No ajuste, o texto veio ja extraido do
+        # enriquecimento. Esta conferencia mede se as duas rotas coincidem.
+        pdfs = {}
+        with tarfile.open(tar, "r:gz") as tf:
+            for m in tf.getmembers():
+                if "/pdf_documents/" in m.name and m.name.endswith(".pdf"):
+                    pdfs[m.name] = tf.extractfile(m).read()
+        d = enriquecimento / host
+        if d.is_dir():
+            for f in sorted(d.glob("*.pdf")):
+                pdfs[f.name] = f.read_bytes()
+        ev = RawEvidence(domain=Domain(url=f"https://{host}", tld=".com.br",
+                                       source_name="verificacao"),
+                         html_pages=paginas, pdf_documents=pdfs,
+                         subpage_selection=(meta.get("subpage_selection") or {}),
+                         fetcher_name="verificacao",
+                         timestamp_utc=datetime.now(timezone.utc))
+        r = t.evaluate(ev, params, protocol_version="v", run_id="v")
+        obtido = r.audit_trail["atributos"]
+        esperado = {x: int(M[host][x]) for x in ATRIBUTOS}
+        conferidos += 1
+        if obtido != esperado:
+            divergentes += 1
+            if len(exemplos) < 4:
+                exemplos.append(f"{host}: {[x for x in ATRIBUTOS if obtido[x] != esperado[x]]}")
+        eta = a.intercepto + sum(c * esperado[n] for n, c in zip(a.atributos, a.coeficientes))
+        difs.append(abs(r.confidence - 1 / (1 + np.exp(-eta))))
+
+    rel.afere(conferidos > 0 and divergentes == 0,
+              "atributos do plugin == matriz do ajuste, a partir de RawEvidence",
+              f"{conferidos} sitios, {divergentes} divergentes"
+              + ("\n" + "\n".join(exemplos) if exemplos else "")
+              + "\n(ordem de concatenacao e extracao de PDF pela rota de producao)")
+    rel.afere(difs and max(difs) < 1e-9,
+              "probabilidade == aplicacao direta da equacao publicada",
+              f"maior diferenca {max(difs):.2e}" if difs else "sem sitios")
+    rel.afere(a.extrator_versao == VERSAO_EXTRATOR,
+              "proveniencia: extrator do artefato == extrator instalado",
+              f"{a.extrator_versao}")
+
+    ev = RawEvidence(domain=Domain(url="https://x.com.br", tld=".com.br",
+                                   source_name="v"),
+                     html_pages={"/": b"<p>dpo@x.com.br seus direitos</p>"},
+                     fetcher_name="v", timestamp_utc=datetime.now(timezone.utc))
+    for descricao, pp, exc in (
+            ("artefato divergente", {"modelo_file": arq, "modelo_sha256": "0" * 64},
+             ArtefatoCorrompido),
+            ("artefato de texto", {"modelo_file": str(modelos / reg["finalidade"]["arquivo"]),
+                                   "modelo_sha256": reg["finalidade"]["sha256"]},
+             ArtefatoCorrompido),
+            ("protocolo sem modelo declarado", {}, ValueError)):
+        try:
+            CanalTitularMLTest().evaluate(ev, pp, protocol_version="v", run_id="v")
+            rel.afere(False, f"recusa: {descricao}")
+        except exc:
+            rel.afere(True, f"recusa: {descricao}")
+
 
 ITENS = {
     2: ("Artefato de modelo", "tests_unit/test_artefato.py", item_2),
     3: ("Exportacao dos artefatos textuais", "tests_unit/test_artefato.py", item_3),
     4: ("Plugins das variaveis textuais", "tests_unit/test_ml_texto.py", item_4),
     5: ("Atributos do canal e artefato de Firth", "tests_unit/test_artefato.py", item_5),
+    6: ("Plugin do canal por classificacao", "tests_unit/test_canal_titular_ml.py", item_6),
 }
 
 
