@@ -1,0 +1,7 @@
+domain_url;variable_name;value;confidence;run_id;protocol_version;plugin_version;computed_at;n_sentencas_sinalizadas;n_segmentos_avaliados;limiar;cobertura_vocabulario;extrapolacao;motivo;modelo_sha256;preparo_versao;extrator_versao;corpo_sha256;densidade_sinalizacao
+https://unimeduberaba.com.br;tem_banner_cookies;true;0.95;ac410b9e-ed76-409f-beb8-e43c4d645aad;reexame-mudanca-v1.0.0;0.3.1;2026-08-15T20:51:33.467244+00:00;;;;;;;;;;;
+https://unimeduberaba.com.br;tem_politica_privacidade;false;0.95;ac410b9e-ed76-409f-beb8-e43c4d645aad;reexame-mudanca-v1.0.0;0.2.1;2026-08-15T20:51:33.483094+00:00;;;;;;;;;;;
+https://unimeduberaba.com.br;tem_canal_titular;false;0.082157;ac410b9e-ed76-409f-beb8-e43c4d645aad;reexame-mudanca-v1.0.0;1.0.0;2026-08-15T20:51:33.850761+00:00;;;0.5;;;;df5f83e297a13eeae39b2e1f1dbd5406444f81410152159c587f50b5aaa37401;;1.0.0;ad877ab42514aeae3e38de1837f67ae37ae64c79ae04542af23baa0830dc9946;
+https://unimeduberaba.com.br;finalidade_especificada;nao_aplicavel;0.0;ac410b9e-ed76-409f-beb8-e43c4d645aad;reexame-mudanca-v1.0.0;1.0.0;2026-08-15T20:51:33.861447+00:00;;;;;;precondicao_nao_satisfeita;;;;;
+https://unimeduberaba.com.br;direitos_titular_explicados;nao_aplicavel;0.0;ac410b9e-ed76-409f-beb8-e43c4d645aad;reexame-mudanca-v1.0.0;1.0.0;2026-08-15T20:51:33.873007+00:00;;;;;;precondicao_nao_satisfeita;;;;;
+https://unimeduberaba.com.br;transf_internacional_divulgada;nao_aplicavel;0.0;ac410b9e-ed76-409f-beb8-e43c4d645aad;reexame-mudanca-v1.0.0;1.0.0;2026-08-15T20:51:33.882561+00:00;;;;;;precondicao_nao_satisfeita;;;;;
