@@ -156,8 +156,9 @@ mais no mesmo sítio, ou em cinco sítios distintos. Três medições a inviabil
    várias vezes no conjunto reunido. Preservar uma cópia resolve a duplicação sem
    suprimir texto algum.
 
-2. **O critério entre sítios removia declaração.** Sete segmentos portadores de
-   evidência foram descartados exclusivamente por ele. Política copiada de modelo
+2. **O critério entre sítios removia declaração.** Treze segmentos portadores de
+   evidência foram descartados exclusivamente por ele, verificáveis a qualquer
+   momento por `scripts/verificar_criterio_abandonado.py`. Política copiada de modelo
    continua sendo declaração do controlador que a publicou, e o título "Transferência
    internacional de dados" sobreviveu apenas por comparecer em quatro sítios, a um
    passo do corte.
