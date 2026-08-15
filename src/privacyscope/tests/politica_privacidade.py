@@ -38,7 +38,8 @@ from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from privacyscope.core.interfaces import VariableTest
-from privacyscope.core.types import RawEvidence, VariableResult, utc_now
+from privacyscope.fetchers.desafio_antibot import bloqueada, paginas_bloqueadas
+from privacyscope.core.types import RawEvidence, VariableResult, utc_now, NAO_COLETADO
 from privacyscope.tests._helpers import (
     CONFIDENCE_HIGH,
     CONFIDENCE_MEDIUM,
@@ -165,6 +166,41 @@ class PoliticaPrivacidadeTest(VariableTest):
                         keyword_hits = hits
                         best_priority = 1
             # body ausente e nao-PDF: NAO conta.
+
+        # DESAFIO ANTI-BOT NA CANDIDATA
+        # -----------------------------
+        # Nao encontrar politica entre candidatas que o servidor recusou entregar nao
+        # e evidencia de que nao ha politica: e evidencia de que nao se leu. O caso e
+        # concreto e sistematico — nas 1.045 coletas do repositorio, TODAS as nove
+        # paginas com marca de desafio eram candidatas a politica, e todas produziram
+        # `false` com rotulo de confianca ALTO, que e a pior combinacao possivel.
+        #
+        # A verificacao vem DEPOIS da busca, e nao antes: se alguma candidata legivel
+        # qualificou a politica, o bloqueio de outra e irrelevante e o veredito
+        # positivo permanece.
+        bloqueadas = paginas_bloqueadas(evidence)
+        recusadas = [c.get("url") for c in candidates
+                     if c.get("url") and bloqueada(c["url"], bloqueadas)]
+        if not value and recusadas:
+            return VariableResult(
+                domain_url=evidence.domain.url,
+                variable_name=self.variable_name,
+                value=NAO_COLETADO,
+                confidence=0.0,
+                audit_trail={
+                    "source": "candidata_bloqueada_por_desafio",
+                    "motivo": "desafio_anti_bot",
+                    "coletado": False,
+                    "confidence_label": CONFIDENCE_UNKNOWN,
+                    "paginas_recusadas": recusadas,
+                    "candidates_count": len(candidates),
+                    "fetcher_used": evidence.fetcher_name,
+                },
+                protocol_version=protocol_version,
+                plugin_version=self.version,
+                run_id=run_id,
+                timestamp_utc=utc_now(),
+            )
 
         if not value:
             root = safe_decode(evidence.html_pages.get("/", b""))
