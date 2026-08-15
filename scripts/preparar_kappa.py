@@ -25,17 +25,26 @@ import shutil
 from pathlib import Path
 
 import openpyxl
+import os
 
 REPO = Path(__file__).resolve().parents[1]
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tcc", required=True, help="pasta raiz do TCC")
+    ap.add_argument("--tcc", default=os.environ.get("PRIVACYSCOPE_TCC"),
+                    help="pasta raiz do TCC; na ausencia do argumento adota-se a variavel de ambiente PRIVACYSCOPE_TCC")
     ap.add_argument("--planilha", default="Rotulagem/Kappa - Subconjunto Cego b9 (70 sitios).xlsx")
     ap.add_argument("--codebook", default="Codebook - Quatro Testes ML (canal + textuais) - v2.md")
     ap.add_argument("--destino", default="Rotulagem/entrega_segundo_avaliador")
     args = ap.parse_args()
+
+    if not args.tcc:
+        print("ERRO: a pasta do TCC nao foi informada.")
+        print("  Informe --tcc, ou defina a variavel de ambiente:")
+        print("    PowerShell:  $env:PRIVACYSCOPE_TCC = \"C:\\caminho\\TCC\"")
+        print("    bash:        export PRIVACYSCOPE_TCC=/caminho/TCC")
+        return 2
 
     tcc = Path(args.tcc)
     destino = tcc / args.destino

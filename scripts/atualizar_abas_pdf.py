@@ -6,8 +6,12 @@ contenham. Regenerar o instrumento inteiro descartaria a marcacao ja realizada n
 demais politicas; esta rotina substitui somente as abas cujos segmentos divergem do
 conjunto corrente, e preserva as restantes com todas as marcas.
 
-A comparacao e feita sobre o texto dos segmentos, e nao sobre a contagem: aba cujo
-conteudo permaneca identico nao e tocada, ainda que a ordem interna varie.
+A comparacao distingue tres situacoes. Aba cujo conteudo permaneca identico nao e
+tocada. Aba cujos segmentos correspondam um a um, diferindo apenas em espaco em
+branco, tem o TEXTO atualizado e as MARCAS PRESERVADAS: trata-se do mesmo segmento
+com formatacao normalizada, e descartar a marcacao seria perda gratuita. Somente a
+aba cuja estrutura tenha mudado — segmentos acrescidos, suprimidos ou reordenados —
+e regenerada, com a perda inevitavel da marcacao.
 
 As abas substituidas perdem a marcacao, o que e inevitavel — os segmentos passaram a
 ser outros. A rotina relaciona quais serao afetadas ANTES de gravar, e exige
@@ -21,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import shutil
 from collections import defaultdict
 from datetime import datetime
@@ -34,11 +39,19 @@ ROTULO = {"finalidade": "Finalidade", "direitos_titular": "Direitos",
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tcc", required=True)
+    ap.add_argument("--tcc", default=os.environ.get("PRIVACYSCOPE_TCC"),
+                    help="pasta raiz do TCC; na ausencia do argumento adota-se a variavel de ambiente PRIVACYSCOPE_TCC")
     ap.add_argument("--planilha", default="Rotulagem/Completude - 15 politicas.xlsx")
     ap.add_argument("--segmentos", default="outputs/segmentos_textuais.csv")
     ap.add_argument("--aplicar", action="store_true")
     args = ap.parse_args()
+
+    if not args.tcc:
+        print("ERRO: a pasta do TCC nao foi informada.")
+        print("  Informe --tcc, ou defina a variavel de ambiente:")
+        print("    PowerShell:  $env:PRIVACYSCOPE_TCC = \"C:\\caminho\\TCC\"")
+        print("    bash:        export PRIVACYSCOPE_TCC=/caminho/TCC")
+        return 2
 
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -55,7 +68,10 @@ def main() -> int:
     for l in S:
         atual[l["site_id"]][int(l["segmento_id"])] = l["texto"]
 
-    mudou, iguais, marcas_perdidas = [], [], 0
+    def norm(t):
+        return " ".join(str(t or "").split())
+
+    mudou, iguais, so_espaco, marcas_perdidas = [], [], [], 0
     for aba in wb.sheetnames:
         if aba in ("Controle", "Instrucoes"):
             continue
@@ -74,14 +90,20 @@ def main() -> int:
                 if r[j] not in (None, ""):
                     marcas += 1
         novo = atual.get(sitio, {})
-        if list(antigo.values()) == list(novo.values()):
+        va, vn = list(antigo.values()), list(novo.values())
+        if va == vn:
             iguais.append((aba, len(antigo)))
+        elif [norm(x) for x in va] == [norm(x) for x in vn]:
+            so_espaco.append((aba, sitio, len(antigo), marcas))
         else:
             mudou.append((aba, sitio, len(antigo), len(novo), marcas))
             marcas_perdidas += marcas
 
     print(f"abas inalteradas: {len(iguais)}")
-    print(f"abas a substituir: {len(mudou)}\n")
+    print(f"abas com diferenca apenas de espaco em branco: {len(so_espaco)}")
+    for aba, _, n, marcas in so_espaco:
+        print(f"  {aba:32} {n:>5} segmentos   texto atualizado, {marcas} marca(s) PRESERVADA(S)")
+    print(f"\nabas a substituir: {len(mudou)}\n")
     for aba, sitio, na, nn, marcas in mudou:
         aviso = f"   PERDE {marcas} marca(s)" if marcas else "   (sem marcacao ainda)"
         print(f"  {aba:32} {na:>5} -> {nn:>5} segmentos{aviso}")
@@ -90,12 +112,46 @@ def main() -> int:
     if not args.aplicar:
         print("\n  modo de relacao: nada foi gravado. Use --aplicar para efetivar.")
         return 0
-    if not mudou:
-        print("\n  nada a fazer.")
+    # a linha de total e recalculada mesmo quando nenhuma aba muda: ela nao
+    # acompanha as substituicoes individuais e defasa em silencio
+    def atualiza_total():
+        if "Controle" not in wb.sheetnames:
+            return None
+        ctl = wb["Controle"]
+        soma = sum(sum(1 for r in wb[a].iter_rows(min_row=2, values_only=True)
+                       if r and r[0] is not None)
+                   for a in wb.sheetnames if a not in ("Controle", "Instrucoes"))
+        for r in ctl.iter_rows(min_row=2):
+            if r[0].value and str(r[0].value).strip() == "TOTAL":
+                antes = r[1].value
+                r[1].value = soma
+                return antes, soma
+        return None
+
+    if not mudou and not so_espaco:
+        t = atualiza_total()
+        if t and t[0] != t[1]:
+            shutil.copy2(caminho, caminho.with_suffix(
+                f".bak_{datetime.now():%Y%m%d%H%M}.xlsx"))
+            wb.save(caminho)
+            print(f"\n  nenhuma aba mudou; linha de total corrigida de {t[0]} para {t[1]}.")
+        else:
+            print("\n  nada a fazer.")
         return 0
 
     backup = caminho.with_suffix(f".bak_{datetime.now():%Y%m%d%H%M}.xlsx")
     shutil.copy2(caminho, backup)
+
+    # atualizacao cosmetica: substitui o texto, conserva marcacao e observacoes
+    for aba, sitio, _, _ in so_espaco:
+        ws = wb[aba]
+        segs = atual.get(sitio, {})
+        for r in ws.iter_rows(min_row=2):
+            if r[0].value is None:
+                continue
+            t = segs.get(int(r[0].value))
+            if t is not None:
+                r[1].value = t
 
     cab = ["segmento_id", "texto"] + [ROTULO[v] for v in VARIAVEIS] + ["obs"]
     for aba, sitio, _, _, _ in mudou:
@@ -131,8 +187,10 @@ def main() -> int:
             if r[0].value and r[0].value in afetados:
                 r[1].value = len(atual.get(r[0].value, {}))
                 r[3].value = None
+    atualiza_total()
     wb.save(caminho)
-    print(f"\n  {len(mudou)} aba(s) substituida(s); copia de seguranca em {backup.name}")
+    print(f"\n  {len(so_espaco)} aba(s) com texto atualizado e marcacao preservada")
+    print(f"  {len(mudou)} aba(s) substituida(s); copia de seguranca em {backup.name}")
     print("  A conclusao dessas politicas foi limpa na aba de Controle.")
     return 0
 

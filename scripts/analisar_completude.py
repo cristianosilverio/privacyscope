@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 from math import sqrt
 from pathlib import Path
 
@@ -57,11 +58,19 @@ def wilson(k, n, z=1.959963984540054):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tcc", required=True)
+    ap.add_argument("--tcc", default=os.environ.get("PRIVACYSCOPE_TCC"),
+                    help="pasta raiz do TCC; na ausencia do argumento adota-se a variavel de ambiente PRIVACYSCOPE_TCC")
     ap.add_argument("--planilha", default="Rotulagem/Completude - 15 politicas.xlsx")
     ap.add_argument("--segmentos", default="outputs/segmentos_textuais.csv")
     ap.add_argument("--out", default="outputs/completude_resultados.csv")
     args = ap.parse_args()
+
+    if not args.tcc:
+        print("ERRO: a pasta do TCC nao foi informada.")
+        print("  Informe --tcc, ou defina a variavel de ambiente:")
+        print("    PowerShell:  $env:PRIVACYSCOPE_TCC = \"C:\\caminho\\TCC\"")
+        print("    bash:        export PRIVACYSCOPE_TCC=/caminho/TCC")
+        return 2
 
     import openpyxl
 
