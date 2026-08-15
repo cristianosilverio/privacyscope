@@ -1,0 +1,262 @@
+"""Renderizadores de saida: a sexta camada do arcabouco.
+
+Cinco artefatos, tres formatos, quatro finalidades. A multiplicidade nao e
+redundancia: quem tabula, quem prioriza, quem verifica e quem reprocessa querem
+recortes diferentes do mesmo conjunto, e atender os quatro num arquivo so atende
+mal a todos.
+
+    csv             uma linha por sitio e variavel — o formato fiel ao
+                    armazenamento, com os campos escalares do registro de
+                    auditoria promovidos a coluna.
+    csv_largo       uma linha por sitio, uma coluna por variavel — o formato de
+                    TRIAGEM, que permite ordenar sitios pela ausencia de sinais,
+                    que e o uso que a etapa de Monitoramento faz do instrumento.
+    csv_evidencias  uma linha por SENTENCA sinalizada — a lista de trabalho de
+                    quem confere. E o artefato que materializa o contrato de
+                    triagem com verificacao humana.
+    parquet         o formato longo, tipado, para reprocessamento analitico.
+    json            estrutura aninhada por sitio, com o registro de auditoria
+                    INTEGRO, inclusive as sentencas. E o unico que nao perde nada.
+
+Todos carregam identificador da execucao, versao do protocolo e, quando o
+resultado provem de classificacao, o resumo criptografico do artefato que o
+produziu — sem o que a planilha que sai do arcabouco deixa de ser conferivel.
+"""
+from __future__ import annotations
+
+import csv
+import json
+from collections import OrderedDict, defaultdict
+from pathlib import Path
+from typing import Any, ClassVar
+
+from privacyscope.core.interfaces import OutputRenderer, ResultStore
+from privacyscope.core.types import NAO_APLICAVEL
+from privacyscope.outputs._comum import (
+    COLUNAS_BASE, DERIVADAS, ESCALARES, coleta, densidade, destino, dominio,
+    linha_plana, sentencas, trilha,
+)
+
+
+def _estado(valor) -> str:
+    """Tres estados, e nao dois.
+
+    `nao_aplicavel` nao e ausencia de divulgacao: e ausencia de medicao, porque a
+    precondicao da variavel nao se verificou. Reduzi-lo a `false` produziria
+    indicador enviesado exatamente na direcao que o trabalho quer medir.
+    """
+    if valor == NAO_APLICAVEL or valor == "nao_aplicavel":
+        return NAO_APLICAVEL
+    return "true" if valor in (True, 1, "1", "true") else "false"
+
+
+class CsvLongo(OutputRenderer):
+    """Uma linha por sitio e variavel."""
+
+    name: ClassVar[str] = "csv"
+    version: ClassVar[str] = "1.0.0"
+
+    def render(self, store: ResultStore, params: dict[str, Any]) -> Path:
+        R = coleta(store, params)
+        alvo = destino(params, "data/results/resultados.csv")
+        campos = list(COLUNAS_BASE) + list(ESCALARES) + list(DERIVADAS)
+        with alvo.open("w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=campos, delimiter=";", restval="")
+            w.writeheader()
+            for r in R:
+                w.writerow(linha_plana(r))
+        return alvo.resolve()
+
+
+class CsvLargo(OutputRenderer):
+    """Uma linha por sitio, uma coluna por variavel. Formato de triagem."""
+
+    name: ClassVar[str] = "csv_largo"
+    version: ClassVar[str] = "1.0.0"
+
+    def render(self, store: ResultStore, params: dict[str, Any]) -> Path:
+        R = coleta(store, params)
+        alvo = destino(params, "data/results/resultados_largo.csv")
+
+        variaveis = sorted({r.variable_name for r in R})
+        por_sitio: dict[str, dict[str, Any]] = OrderedDict()
+        for r in R:
+            d = por_sitio.setdefault(dominio(r.domain_url), {
+                "dominio": dominio(r.domain_url), "domain_url": r.domain_url,
+                "run_id": r.run_id, "protocol_version": r.protocol_version})
+            at = trilha(r)
+            d[r.variable_name] = _estado(r.value)
+            d[f"{r.variable_name}__confianca"] = round(float(r.confidence), 4)
+            # Contagem, denominador e densidade acompanham o valor binario porque a
+            # triagem ORDENA, e o binario satura em variaveis de alta prevalencia:
+            # em finalidade ele responde "sim" para toda politica com texto, ao passo
+            # que a densidade preserva ordenacao. Nenhum limiar e arbitrado aqui — a
+            # ordenacao dispensa corte, e escolher um contra a rotulagem de referencia
+            # seria ajustar parametro sobre o conjunto de afericao.
+            if at.get("n_segmentos_avaliados") is not None:
+                d[f"{r.variable_name}__n_sentencas"] = at.get("n_sentencas_sinalizadas")
+                d[f"{r.variable_name}__n_segmentos"] = at.get("n_segmentos_avaliados")
+                d[f"{r.variable_name}__densidade"] = densidade(at)
+            if at.get("extrapolacao"):
+                d["extrapolacao"] = "true"
+
+        # A contagem de sinais AUSENTES e o que ordena a triagem: a etapa de
+        # Monitoramento prioriza por ausencia de evidencia de transparencia, e
+        # deixar o leitor somar colunas a mao seria transferir-lhe trabalho.
+        for d in por_sitio.values():
+            d.setdefault("extrapolacao", "false")
+            # Ausencia de sinal conta apenas o que foi MEDIDO e deu falso. Somar
+            # `nao_aplicavel` aqui confundiria "nao divulgou" com "nao foi medido",
+            # e a ordenacao da triagem passaria a priorizar sitios sem politica.
+            d["n_sinais_ausentes"] = sum(1 for v in variaveis if d.get(v) == "false")
+            d["n_nao_aplicavel"] = sum(1 for v in variaveis
+                                       if d.get(v) == NAO_APLICAVEL)
+            d["n_variaveis_apuradas"] = sum(1 for v in variaveis
+                                            if d.get(v) in ("true", "false"))
+
+        com_contagem = sorted({v for d in por_sitio.values() for v in variaveis
+                               if f"{v}__n_segmentos" in d})
+        campos = (["dominio", "n_sinais_ausentes", "n_variaveis_apuradas",
+                   "n_nao_aplicavel"]
+                  + variaveis + [f"{v}__confianca" for v in variaveis]
+                  + [c for v in com_contagem
+                     for c in (f"{v}__n_sentencas", f"{v}__n_segmentos",
+                               f"{v}__densidade")]
+                  + ["extrapolacao", "domain_url", "run_id", "protocol_version"])
+        linhas = sorted(por_sitio.values(),
+                        key=lambda d: (-d["n_sinais_ausentes"], d["dominio"]))
+        with alvo.open("w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=campos, delimiter=";", restval="")
+            w.writeheader()
+            w.writerows(linhas)
+        return alvo.resolve()
+
+
+class CsvEvidencias(OutputRenderer):
+    """Uma linha por sentenca sinalizada. Lista de trabalho da verificacao."""
+
+    name: ClassVar[str] = "csv_evidencias"
+    version: ClassVar[str] = "1.0.0"
+
+    def render(self, store: ResultStore, params: dict[str, Any]) -> Path:
+        R = coleta(store, params)
+        alvo = destino(params, "data/results/evidencias.csv")
+        campos = ["dominio", "variable_name", "posicao", "escore", "texto",
+                  "limiar", "n_sentencas_sinalizadas", "sentencas_omitidas",
+                  "extrapolacao", "modelo_sha256", "run_id"]
+        with alvo.open("w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=campos, delimiter=";", restval="",
+                               quoting=csv.QUOTE_ALL)
+            w.writeheader()
+            for r in R:
+                at = trilha(r)
+                for s in sentencas(r):
+                    w.writerow({
+                        "dominio": dominio(r.domain_url),
+                        "variable_name": r.variable_name,
+                        "posicao": s.get("posicao"), "escore": s.get("escore"),
+                        # A quebra de linha nao sobrevive a leitura por planilha;
+                        # o preparo ja colapsa espaco, mas a guarda e barata.
+                        "texto": " ".join(str(s.get("texto", "")).split()),
+                        "limiar": at.get("limiar"),
+                        "n_sentencas_sinalizadas": at.get("n_sentencas_sinalizadas"),
+                        "sentencas_omitidas": at.get("sentencas_omitidas", 0),
+                        "extrapolacao": "true" if at.get("extrapolacao") else "false",
+                        "modelo_sha256": at.get("modelo_sha256", ""),
+                        "run_id": r.run_id})
+        return alvo.resolve()
+
+
+class ParquetLongo(OutputRenderer):
+    """Formato longo tipado, para reprocessamento analitico."""
+
+    name: ClassVar[str] = "parquet"
+    version: ClassVar[str] = "1.0.0"
+
+    def render(self, store: ResultStore, params: dict[str, Any]) -> Path:
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+        except ImportError as e:                              # pragma: no cover
+            raise RuntimeError(
+                "o renderizador parquet exige pyarrow; instale com "
+                "pip install -e . (pyarrow consta das dependencias do pacote)") from e
+        R = coleta(store, params)
+        alvo = destino(params, "data/results/resultados.parquet")
+        linhas = [linha_plana(r) for r in R]
+        campos = list(COLUNAS_BASE) + list(ESCALARES) + list(DERIVADAS)
+        colunas = {c: [l.get(c, "") for l in linhas] for c in campos}
+
+        # A tipagem e DECLARADA, nunca inferida. Colunas do registro de auditoria
+        # so existem para as variaveis supervisionadas, de sorte que ficam vazias
+        # nas demais; sob inferencia, o tipo passaria a depender de qual variavel
+        # aparece primeiro, e o esquema do arquivo variaria entre execucoes.
+        REAIS = ("confidence", "limiar", "cobertura_vocabulario",
+                 "densidade_sinalizacao")
+        INTEIROS = ("n_sentencas_sinalizadas", "n_segmentos_avaliados")
+
+        def _real(x):
+            try:
+                return float(x)
+            except (TypeError, ValueError):
+                return None
+
+        def _inteiro(x):
+            try:
+                return int(float(x))
+            except (TypeError, ValueError):
+                return None
+
+        arranjos = {}
+        for c in campos:
+            if c in REAIS:
+                arranjos[c] = pa.array([_real(x) for x in colunas[c]], type=pa.float64())
+            elif c in INTEIROS:
+                arranjos[c] = pa.array([_inteiro(x) for x in colunas[c]], type=pa.int64())
+            else:
+                arranjos[c] = pa.array([None if x == "" else str(x) for x in colunas[c]],
+                                       type=pa.string())
+        pq.write_table(pa.table(arranjos), alvo)
+        return alvo.resolve()
+
+
+class JsonEvidencia(OutputRenderer):
+    """Estrutura aninhada por sitio, com o registro de auditoria integro."""
+
+    name: ClassVar[str] = "json"
+    version: ClassVar[str] = "1.0.0"
+
+    def render(self, store: ResultStore, params: dict[str, Any]) -> Path:
+        R = coleta(store, params)
+        alvo = destino(params, "data/results/resultados.json")
+
+        sitios: dict[str, dict[str, Any]] = OrderedDict()
+        modelos: dict[str, str] = {}
+        for r in R:
+            at = trilha(r)
+            d = sitios.setdefault(dominio(r.domain_url),
+                                  {"dominio": dominio(r.domain_url),
+                                   "domain_url": r.domain_url, "variaveis": {}})
+            d["variaveis"][r.variable_name] = {
+                "valor": _estado(r.value),
+                "confianca": round(float(r.confidence), 6),
+                "densidade_sinalizacao": densidade(at),
+                "plugin_version": r.plugin_version,
+                "auditoria": at}
+            if at.get("modelo_sha256"):
+                modelos[r.variable_name] = at["modelo_sha256"]
+
+        # O cabecalho reune, num lugar so, o que identifica a execucao inteira:
+        # sem ele o leitor teria de percorrer todos os sitios para descobrir sob
+        # que protocolo e com que modelos o conjunto foi produzido.
+        cabecalho = {
+            "run_id": R[0].run_id if R else None,
+            "protocol_version": R[0].protocol_version if R else None,
+            "n_sitios": len(sitios),
+            "n_resultados": len(R),
+            "modelos": modelos,
+        }
+        with alvo.open("w", encoding="utf-8") as fh:
+            json.dump({"execucao": cabecalho, "sitios": list(sitios.values())},
+                      fh, ensure_ascii=False, indent=2)
+        return alvo.resolve()

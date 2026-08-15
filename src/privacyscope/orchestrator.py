@@ -34,6 +34,7 @@ from typing import Any, Iterator
 import yaml
 
 from privacyscope.core.plugin_registry import resolve
+from privacyscope.core.types import NAO_APLICAVEL
 from privacyscope.core.types import Domain, EvidenceRef, RawEvidence
 
 logger = logging.getLogger(__name__)
@@ -285,6 +286,51 @@ class Orchestrator:
             except Exception as exc:
                 logger.error("falha analyze_only em %s: %s", entry["domain_url"], exc)
 
+        self.render_outputs(run_id)
+
+    # ------------------------------------------------------------------
+    # Saída — a sexta camada
+    # ------------------------------------------------------------------
+    def render_outputs(self, run_id: str | None = None) -> list[Path]:
+        """Executa os renderizadores declarados em ``outputs``.
+
+        A chave e opcional: protocolo sem ela encerra com os resultados apenas na
+        camada de Resultados Estruturados, que e o comportamento anterior. Quando
+        presente, cada entrada nomeia um renderizador registrado e seus parametros.
+
+        O filtro por execucao e injetado quando o chamador informa o identificador,
+        de modo que o artefato de saida corresponda ao que se acabou de produzir, e
+        nao a tudo que ja houve no mesmo armazenamento.
+        """
+        entradas = self.protocol.get("outputs") or []
+        if not entradas:
+            return []
+        gerados: list[Path] = []
+        for cfg in entradas:
+            nome = cfg["name"] if isinstance(cfg, dict) and "name" in cfg else None
+            if nome is None:
+                logger.warning("entrada de outputs sem `name`: %r", cfg)
+                continue
+            params = dict(cfg.get("params") or {})
+            if run_id:
+                params.setdefault("filtro", {}).setdefault("run_id", run_id)
+            try:
+                RendCls = resolve("output_renderers", nome)
+            except KeyError as e:
+                logger.error("renderizador %r nao registrado: %s", nome, e)
+                continue
+            try:
+                caminho = RendCls().render(self.store, params)
+            except Exception as exc:                          # noqa: BLE001
+                # Falha de um renderizador nao invalida os resultados ja
+                # persistidos nem impede os demais artefatos de saida.
+                logger.error("falha no renderizador %s: %s", nome, exc)
+                continue
+            gerados.append(caminho)
+            logger.info("saida gerada: %s -> %s", nome, caminho)
+            print(f"  saida  {nome:16} {caminho}")
+        return gerados
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -293,14 +339,76 @@ class Orchestrator:
         return await self.fetcher.fetch(domain, self.fetcher_params)
 
     def _analyze_evidence(self, evidence: RawEvidence, run_id: str) -> None:
-        """Aplica todos os VariableTests à evidência e persiste resultados."""
+        """Aplica os VariableTests à evidência, respeitando dependências declaradas.
+
+        DEPENDÊNCIA ENTRE VARIÁVEIS
+        ---------------------------
+        Algumas variáveis só existem enquanto propriedade de um documento: finalidade,
+        direitos do titular e transferência internacional são declarações DENTRO da
+        política de privacidade. Aplicá-las a um sítio sem política é submeter a um
+        classificador de políticas um material que não é política — e o resultado não
+        é ausência de divulgação, é medição indevida.
+
+        A consequência foi medida sobre 506 sítios: 46% não têm política detectada, e
+        neles a variável de finalidade ainda saía positiva em 21,8% dos casos, o que
+        respondia por 16% de todos os positivos. Um portal municipal, submetido ao
+        classificador, dispara em itens de menu como "Cadastro de Fornecedores", que
+        nomeiam atividade de tratamento sem ser declaração do controlador.
+
+        A dependência é DECLARADA no protocolo, e não inferida dentro do plugin: os
+        testes não se conhecem entre si, e embutir a regra num deles a tornaria
+        invisível a quem lê o protocolo. Quando ela não é satisfeita, o resultado sai
+        com valor ``nao_aplicavel`` — nunca ``false``, que confundiria "não divulgou"
+        com "não foi medido" e enviesaria o indicador na direção que mais importa.
+
+        O custo é conhecido e pequeno: o detector de política tem revocação de 95,2%
+        sobre os sítios com política, de sorte que cerca de 5% deles recebem
+        ``nao_aplicavel`` indevidamente. Vai declarado como limitação.
+        """
+        anteriores: dict[str, Any] = {}
         for test, params in self.tests:
-            result = test.evaluate(
-                evidence, params,
-                protocol_version=self.protocol["metadata"]["protocol_version"],
-                run_id=run_id,
-            )
+            faltando = [d for d in (params.get("depende_de") or [])
+                        if not anteriores.get(d)]
+            if faltando:
+                result = self._nao_aplicavel(test, evidence, run_id, faltando,
+                                             anteriores)
+            else:
+                result = test.evaluate(
+                    evidence, params,
+                    protocol_version=self.protocol["metadata"]["protocol_version"],
+                    run_id=run_id,
+                )
+            anteriores[result.variable_name] = result.value is True
             self.store.upsert(result)
+
+    def _nao_aplicavel(self, test, evidence: RawEvidence, run_id: str,
+                       faltando: list[str], anteriores: dict[str, Any]):
+        """Resultado de variável cuja precondição não se verificou."""
+        from datetime import datetime, timezone
+
+        from privacyscope.core.types import VariableResult
+
+        # Dependência não apurada difere de dependência apurada e falsa: a primeira
+        # denuncia ordem errada no protocolo, e precisa ser distinguível no registro.
+        nao_apuradas = [d for d in faltando if d not in anteriores]
+        if nao_apuradas:
+            logger.warning(
+                "%s depende de %s, que ainda nao foi apurada nesta execucao; "
+                "verifique a ordem dos testes no protocolo",
+                getattr(test, "name", type(test).__name__), nao_apuradas)
+        return VariableResult(
+            domain_url=evidence.domain.url,
+            variable_name=test.variable_name,
+            value=NAO_APLICAVEL,
+            confidence=0.0,
+            audit_trail={"motivo": "precondicao_nao_satisfeita",
+                         "depende_de": list(faltando),
+                         "nao_apuradas": nao_apuradas,
+                         "aplicavel": False},
+            protocol_version=self.protocol["metadata"]["protocol_version"],
+            plugin_version=getattr(test, "version", "0"),
+            run_id=run_id,
+            timestamp_utc=datetime.now(timezone.utc))
 
     def close(self) -> None:
         """Fecha recursos (ResultStore)."""

@@ -79,6 +79,37 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_render(args: argparse.Namespace) -> int:
+    """Regera os artefatos de saida sobre resultados ja persistidos.
+
+    Existe porque formato de saida muda com frequencia muito maior que analise:
+    acrescentar coluna, trocar recorte ou atender pedido de quem consome nao deveria
+    obrigar a reprocessar centenas de sitios. Os renderizadores leem da camada de
+    Resultados Estruturados, que ja tem tudo — inclusive o registro de auditoria de
+    cada resultado, de onde saem contagem, denominador e identidade do artefato.
+
+    Nao recalcula nada. Se a analise mudou, o comando a rodar e `analyze`.
+    """
+    from privacyscope.orchestrator import Orchestrator
+
+    orch = Orchestrator(args.protocol)
+    try:
+        gerados = orch.render_outputs(args.run_id)
+    finally:
+        orch.close()
+    if not gerados:
+        print("\nNenhuma saída gerada: o protocolo não declara `outputs`.")
+        return 1
+    print(f"\n=== Saídas geradas ===")
+    print(f"protocol_version:        {orch.protocol['metadata']['protocol_version']}")
+    if args.run_id:
+        print(f"run_id:                  {args.run_id}")
+    else:
+        print(f"run_id:                  (todos os presentes no armazenamento)")
+    print(f"artefatos:               {len(gerados)}")
+    return 0
+
+
 def cmd_verify_manifest(args: argparse.Namespace) -> int:
     from privacyscope.storage.manifest_audit import verify_manifest
 
@@ -137,6 +168,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_analyze.add_argument("protocol", type=Path, help="Caminho do protocol.yaml.")
     p_analyze.add_argument("--run-id", required=True, help="UUID do run a re-analisar.")
     p_analyze.set_defaults(func=cmd_analyze)
+
+    # render
+    p_render = sub.add_parser(
+        "render",
+        help="Regera as saídas sobre resultados já persistidos, sem reanalisar.",
+    )
+    p_render.add_argument("protocol", type=Path, help="Caminho do protocol.yaml.")
+    p_render.add_argument("--run-id", default=None,
+                          help="Restringe a uma execução; sem ele, rende tudo o que "
+                               "houver no armazenamento declarado.")
+    p_render.set_defaults(func=cmd_render)
 
     # verify-manifest
     p_vm = sub.add_parser(

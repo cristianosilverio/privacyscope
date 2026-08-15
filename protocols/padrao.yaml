@@ -79,15 +79,37 @@ tests:
   params:
     modelo_file: models/textuais-finalidade-v1.0.0.npz
     modelo_sha256: cf474b9bf6133dc374e0f0720835da6b8e669a67f3008ae4f970a27db96ae0c0
+    depende_de:
+    - tem_politica_privacidade
 - name: direitos_titular_explicados
   params:
     modelo_file: models/textuais-direitos_titular-v1.0.0.npz
     modelo_sha256: a2912290b9911114715a7dd0ea2170bea5e349db39b92b12a6e9c12e84f91a01
+    depende_de:
+    - tem_politica_privacidade
 - name: transf_internacional_divulgada
   params:
     modelo_file: models/textuais-transf_internacional-v1.0.0.npz
     modelo_sha256: ba65b01f76606776b220befc40de2025341f4326ab79e1658bcb3049016c7dff
+    depende_de:
+    - tem_politica_privacidade
 result_store:
   name: sqlite
   params:
     db_path: data/padrao/results.sqlite
+outputs:
+- name: csv
+  params:
+    path: data/padrao/resultados.csv
+- name: csv_largo
+  params:
+    path: data/padrao/resultados_largo.csv
+- name: csv_evidencias
+  params:
+    path: data/padrao/evidencias.csv
+- name: parquet
+  params:
+    path: data/padrao/resultados.parquet
+- name: json
+  params:
+    path: data/padrao/resultados.json

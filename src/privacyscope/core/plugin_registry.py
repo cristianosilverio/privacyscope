@@ -107,7 +107,19 @@ VARIABLE_TESTS: dict[str, Type[VariableTest]] = {
     "transf_internacional_divulgada_densa": TransfDensaTest,
 }
 
-OUTPUT_RENDERERS: dict[str, Type[OutputRenderer]] = {}
+from privacyscope.outputs.renderizadores import (      # noqa: E402
+    CsvEvidencias, CsvLargo, CsvLongo, JsonEvidencia, ParquetLongo,
+)
+
+OUTPUT_RENDERERS: dict[str, Type[OutputRenderer]] = {
+    # A sexta camada. Cinco artefatos porque quem tabula, quem prioriza, quem
+    # verifica e quem reprocessa querem recortes distintos do mesmo conjunto.
+    "csv": CsvLongo,
+    "csv_largo": CsvLargo,
+    "csv_evidencias": CsvEvidencias,
+    "parquet": ParquetLongo,
+    "json": JsonEvidencia,
+}
 
 
 # =============================================================================

@@ -219,6 +219,16 @@ class EvidenceRef(BaseModel):
 # =============================================================================
 # 4) VariableResult - produzido pela camada de Análise (VariableTest)
 # =============================================================================
+# Valor de saida de variavel cuja precondicao declarada no protocolo nao se
+# verificou — por exemplo, uma variavel que so existe enquanto propriedade da
+# politica de privacidade, num sitio em que politica alguma foi detectada.
+#
+# NAO e ausencia de divulgacao: e ausencia de medicao. Reduzi-lo a `False`
+# confundiria "nao divulgou" com "nao foi medido", e enviesaria o indicador
+# descritivo exatamente na direcao que o trabalho pretende medir.
+NAO_APLICAVEL = "nao_aplicavel"
+
+
 class VariableResult(BaseModel):
     """Resultado da aplicação de um VariableTest sobre uma RawEvidence.
 
