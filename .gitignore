@@ -141,3 +141,9 @@ _query.py
 # reexecucao sobre evidencia congelada nao reproduz resultado algum. O formato e
 # recipiente de dados, nunca objeto serializado — ver docs/artefatos-camada-analise.md.
 !models/*.npz
+
+# Bancos e evidencias de execucao: reproduziveis pelos protocolos.
+data/padrao/
+data/teto/
+data/simulacao/
+outputs/_verificacao_*

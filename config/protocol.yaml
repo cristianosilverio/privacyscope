@@ -1,11 +1,25 @@
+# =============================================================================
+# ATENCAO — ESQUEMA OBSOLETO. ESTE ARQUIVO NAO EXECUTA.
+#
+# As chaves de topo aqui (`sources`, `crawlers`, `raw_storage`, `sampling`) sao de
+# uma versao anterior do orquestrador, que hoje exige `metadata`, `repository`,
+# `fetcher`, `tests` e `result_store`. Carregar este arquivo interrompe com erro de
+# chave obrigatoria ausente.
+#
+# O protocolo executavel e `protocols/padrao.yaml`, e os protocolos das coletas
+# realizadas estao em `protocols/`. Este arquivo permanece apenas como registro do
+# desenho inicial; nao o edite esperando efeito.
+# =============================================================================
 # PrivacyScope — Protocolo de execução
 # Versão: v1.0.0
 # Hash deste arquivo é computado pelo orquestrador e gravado em audit_log.jsonl
 
-protocol_version: v1.0.0
+protocol_version: v1.1.0
 description: >
-  Protocolo inicial — amostra piloto estratificada (n=50) sobre TLD .br.
-  Variáveis: 4 determinísticas + 2 com classificação supervisionada.
+  Amostra estratificada sobre o TLD .br. Seis variáveis técnicas: duas por regra
+  determinística (banner de cookies, política de privacidade) e quatro por
+  classificação supervisionada (canal do titular, finalidade, direitos do titular,
+  transferência internacional).
 
 # ----------------------------------------------------------------
 # 1) Ingestão — quais fontes amostrais ativar e como amostrar
@@ -62,23 +76,54 @@ tests:
   - name: politica_privacidade
     type: structural
     rules_file: config/rules/politica_privacidade.yaml
-  - name: canal_titular
-    type: lexicon
-    rules_file: config/rules/canal_titular.yaml
-  - name: cookies_set
-    type: cookie_inventory
-    # Coleta em fases (pré-consent, pós-consent) pelo PlaywrightFetcher.
-    # value: contagem total por fase; audit_trail: inventário estruturado
-    # com nome, domínio, expires, flags. Valor truncado/hashed por privacidade.
-    mask_value: true
-  - name: categoria_cookies
-    type: cookie_classifier
-    rules_file: config/rules/categoria_cookies.yaml
-    ml_fallback: true
-  - name: menciona_lgpd
-    type: ml_text_classifier
-    model: tfidf_logreg
-    training_data: data/training/menciona_lgpd.csv
+  # Detector por regra do canal do titular: LINHA DE BASE declarada. Produz a
+  # mesma variavel que `canal_titular_ml`, e por isso nao e executado no protocolo
+  # padrao. Para confronta-los num mesmo run, habilite-o com sufixo:
+  #   - name: canal_titular
+  #     params: { variavel_sufixo: "__regra" }
+  # -- Variaveis por classificacao supervisionada -------------------
+  #
+  # Cada uma declara o ARTEFATO e o RESUMO CRIPTOGRAFICO dele. O resumo nao e
+  # informativo: e condicao de execucao. Artefato cuja identidade nao confira
+  # interrompe a analise, em lugar de produzir resultado atribuido a um modelo que
+  # nao foi o empregado.
+  #
+  # O canal do titular comparece em DOIS regimes. Executa-se aqui o supervisionado;
+  # o detector por regra permanece registrado sob `canal_titular` e serve de linha
+  # de base, mas produz a mesma variavel — declarar ambos exige `variavel_sufixo`
+  # em um deles, sob pena de um sobrescrever o outro.
+  - name: canal_titular_ml
+    type: ml_estruturado
+    params:
+      modelo_file: models/canal-titular-v1.0.0.npz
+      modelo_sha256: df5f83e297a13eeae39b2e1f1dbd5406444f81410152159c587f50b5aaa37401
+
+  - name: finalidade_especificada
+    type: ml_texto
+    params:
+      modelo_file: models/textuais-finalidade-v1.0.0.npz
+      modelo_sha256: cf474b9bf6133dc374e0f0720835da6b8e669a67f3008ae4f970a27db96ae0c0
+
+  - name: direitos_titular_explicados
+    type: ml_texto
+    params:
+      modelo_file: models/textuais-direitos_titular-v1.0.0.npz
+      modelo_sha256: a2912290b9911114715a7dd0ea2170bea5e349db39b92b12a6e9c12e84f91a01
+
+  - name: transf_internacional_divulgada
+    type: ml_texto
+    params:
+      modelo_file: models/textuais-transf_internacional-v1.0.0.npz
+      modelo_sha256: ba65b01f76606776b220befc40de2025341f4326ab79e1658bcb3049016c7dff
+
+  # Removidos deste protocolo em 11/08/2026:
+  #   menciona_lgpd     — nao integra a bateria de variaveis tecnicas do trabalho e
+  #                       apontava para dados de treino inexistentes.
+  #   cookies_set       — inventario de cookies por fase de consentimento.
+  #   categoria_cookies — classificacao de cookies por categoria.
+  # Os dois ultimos vao para trabalho futuro: a arquitetura os comporta pelo mesmo
+  # mecanismo de plugin, sem refatoracao das camadas. Mante-los declarados sem
+  # implementacao fazia este protocolo interromper com erro de resolucao.
 
 # ----------------------------------------------------------------
 # 5) Resultados — onde persistir e como

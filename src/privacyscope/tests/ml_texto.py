@@ -141,6 +141,10 @@ class MLTextoTest(VariableTest):
 
         artefato = self._artefato(params)
         teto = int(params.get("n_sentencas_auditoria", N_SENTENCAS_PADRAO))
+        # Sufixo declarado no protocolo, para quando dois regimes da mesma variavel
+        # convivem no mesmo run. A camada de resultados tem chave unica por nome, e
+        # sem o sufixo um sobrescreveria o outro em silencio.
+        sufixo = params.get("variavel_sufixo", "")
 
         paginas = self._paginas(evidence)
         textos_pdf, metodos_pdf = self._textos_pdf(evidence)
@@ -169,7 +173,7 @@ class MLTextoTest(VariableTest):
                                else "sem_texto_avaliavel")
             trilha["n_sentencas_sinalizadas"] = 0
             trilha["sentencas"] = []
-            return self._resultado(evidence, False, 0.0, trilha,
+            return self._resultado(evidence, False, 0.0, trilha, sufixo,
                                    protocol_version, run_id, datetime.now(timezone.utc))
 
         prob, sinal = artefato.decide(segmentos)
@@ -193,14 +197,14 @@ class MLTextoTest(VariableTest):
 
         valor = bool(indices)
         confianca = float(prob[indices[0]]) if indices else float(prob.max())
-        return self._resultado(evidence, valor, confianca, trilha,
+        return self._resultado(evidence, valor, confianca, trilha, sufixo,
                                protocol_version, run_id, datetime.now(timezone.utc))
 
-    def _resultado(self, evidence, valor, confianca, trilha,
+    def _resultado(self, evidence, valor, confianca, trilha, sufixo,
                    protocol_version, run_id, agora) -> VariableResult:
         return VariableResult(
             domain_url=evidence.domain.url,
-            variable_name=self.variable_name,
+            variable_name=f"{self.variable_name}{sufixo}",
             value=valor,
             confidence=max(0.0, min(1.0, float(confianca))),
             audit_trail=trilha,

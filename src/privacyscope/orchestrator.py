@@ -88,6 +88,29 @@ class Orchestrator:
         """Instancia todos os plugins declarados, falha-cedo se algum não existir."""
         # Repository
         repo_cfg = self.protocol["repository"]
+        # Guarda de colisao, ANTES de construir qualquer coisa: protocolo invalido
+        # nao deve criar repositorio nem banco antes de ser recusado.
+        #
+        # A camada de resultados tem chave unica por (protocolo, run, variavel,
+        # dominio) e grava por substituicao. Dois testes que produzam o mesmo nome
+        # de variavel se apagam mutuamente, e o sobrevivente depende da ordem de
+        # declaracao — falha silenciosa da pior especie, porque o arquivo resultante
+        # parece integro. A situacao e concreta: o canal do titular tem dois regimes
+        # registrados, e o teto comparativo produz as mesmas variaveis da
+        # representacao esparsa.
+        nomes: dict[str, list[str]] = {}
+        for t_cfg in self.protocol["tests"]:
+            cls = resolve("variable_tests", t_cfg["name"])
+            sufixo = (t_cfg.get("params") or {}).get("variavel_sufixo", "")
+            nomes.setdefault(f"{cls.variable_name}{sufixo}", []).append(t_cfg["name"])
+        repetidos = {k: v for k, v in nomes.items() if len(v) > 1}
+        if repetidos:
+            detalhe = "; ".join(f"{k} <- {', '.join(v)}" for k, v in repetidos.items())
+            raise ValueError(
+                f"o protocolo declara testes que produzem a mesma variavel: {detalhe}. "
+                f"A camada de resultados sobrescreveria um com o outro sem aviso. "
+                f"Declare `variavel_sufixo` em um deles, ou retire-o do protocolo.")
+
         RepoCls = resolve("repositories", repo_cfg["name"])
         self.repo = RepoCls(**repo_cfg.get("params", {}))
 
@@ -135,6 +158,7 @@ class Orchestrator:
                         logger.warning("rules_file %s ilegivel: %s", _p, _e)
                 params = {**file_params, **params}
             self.tests.append((TestCls(), params))
+
 
     # ------------------------------------------------------------------
     # Domínios

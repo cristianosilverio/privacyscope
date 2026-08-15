@@ -201,7 +201,15 @@ class VariableTest(ABC):
     """Teste aplicado a uma RawEvidence, produzindo um VariableResult.
 
     Cada subclasse implementa uma variável técnica do protocolo. Implementações
-    iniciais: StructuralTest, LexiconTest, MLClassifierTest, CookieAnalyzer.
+    em vigor: BannerCookiesTest, PoliticaPrivacidadeTest e CanalTitularTest, por
+    regra; CanalTitularMLTest, sobre atributos estruturados; a família MLTextoTest,
+    sobre representação esparsa; e a família BertimbauTest, teto comparativo sobre
+    representação densa.
+
+    Duas subclasses podem produzir a MESMA variável — é o caso dos dois regimes do
+    canal do titular e do teto comparativo. A camada de resultados tem chave única
+    por nome de variável, de sorte que declarar ambas no mesmo protocolo exige
+    ``variavel_sufixo`` em uma delas; o orquestrador recusa a duplicidade.
 
     Atributos de classe:
         name: Identificador único do plugin (tipicamente igual a variable_name).

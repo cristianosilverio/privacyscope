@@ -787,6 +787,142 @@ def item_7(rel: Relatorio, verboso: bool) -> None:
     tmp.cleanup()
 
 
+# ===========================================================================
+def item_8(rel: Relatorio, verboso: bool) -> None:
+    """Protocolo executavel e guarda contra colisao de nome de variavel.
+
+    O que se exige, e por que:
+
+      EXECUTAVEL  Os protocolos carregam no orquestrador. O arquivo de referencia
+                  em config/ esta num esquema anterior e NAO executa; permanece
+                  marcado como tal, em lugar de ser armadilha para quem o edite.
+      RESOLVE     Todo teste declarado tem plugin registrado. O esquema anterior
+                  declarava tres que nao existiam.
+      ARTEFATOS   Cada variavel supervisionada declara arquivo e resumo, e o resumo
+                  confere com o disco. Resumo declarado que nao confere e pior que
+                  resumo ausente.
+      GUARDA      Protocolo com dois testes produzindo a mesma variavel e RECUSADO.
+                  A camada de resultados grava por substituicao sobre chave unica
+                  por nome: sem a guarda, um apagaria o outro e o sobrevivente
+                  dependeria da ordem de declaracao.
+      SUFIXO      Com `variavel_sufixo`, os dois regimes convivem em colunas
+                  distintas.
+    """
+    import csv
+    import tempfile
+
+    import yaml
+    from privacyscope.core.plugin_registry import resolve
+    from privacyscope.models.artefato import resumo_arquivo
+    from privacyscope.orchestrator import Orchestrator
+
+    EXIGIDAS = ("metadata", "repository", "result_store", "fetcher", "tests")
+    protocolos = {}
+    for nome in ("padrao.yaml", "teto.yaml"):
+        c = REPO / "protocols" / nome
+        if not c.exists():
+            rel.afere(False, f"protocols/{nome} existe"); continue
+        d = yaml.safe_load(c.read_text(encoding="utf-8"))
+        protocolos[nome] = d
+        faltam = [k for k in EXIGIDAS if k not in d]
+        rel.afere(not faltam, f"[{nome}] esquema em vigor",
+                  f"{d['metadata']['protocol_version']}, {len(d['tests'])} testes"
+                  + (f"   FALTAM: {faltam}" if faltam else ""))
+
+    obsoleto = REPO / "config" / "protocol.yaml"
+    if obsoleto.exists():
+        cab = obsoleto.read_text(encoding="utf-8")[:600]
+        rel.afere("ESQUEMA OBSOLETO" in cab,
+                  "config/protocol.yaml marcado como nao executavel",
+                  "o esquema anterior falharia por chave obrigatoria ausente")
+
+    for nome, d in protocolos.items():
+        faltando = []
+        for t in d.get("tests", []):
+            try:
+                resolve("variable_tests", t["name"])
+            except KeyError:
+                faltando.append(t["name"])
+        rel.afere(not faltando, f"[{nome}] todos os testes resolvem para plugin",
+                  f"{len(d.get('tests', []))} testes"
+                  + (f"   NAO RESOLVEM: {faltando}" if faltando else ""))
+
+    removidos = {"menciona_lgpd", "cookies_set", "categoria_cookies"}
+    presentes = {t["name"] for t in protocolos.get("padrao.yaml", {}).get("tests", [])}
+    rel.afere(not (removidos & presentes),
+              "testes sem implementacao fora do protocolo padrao",
+              f"retirados: {', '.join(sorted(removidos))}")
+
+    padrao = protocolos.get("padrao.yaml", {})
+    declarados, erros = 0, []
+    for t in padrao.get("tests", []):
+        par = t.get("params") or {}
+        arq = par.get("modelo_file")
+        if not arq:
+            continue
+        declarados += 1
+        p_arq = REPO / arq
+        if not p_arq.exists():
+            erros.append(f"{t['name']}: arquivo ausente")
+        elif resumo_arquivo(p_arq) != par.get("modelo_sha256"):
+            erros.append(f"{t['name']}: resumo declarado nao confere")
+    rel.afere(declarados == 4 and not erros,
+              "as quatro variaveis supervisionadas declaram artefato e resumo conferido",
+              f"{declarados} declaradas" + (f"   ERROS: {erros}" if erros else ""))
+
+    # `ignore_cleanup_errors` porque o Windows recusa apagar arquivo aberto, ao
+    # contrario do POSIX. A conexao e fechada logo abaixo; a tolerancia e cinto.
+    tmp = tempfile.TemporaryDirectory(prefix="privacyscope-p8-",
+                                      ignore_cleanup_errors=True)
+    base = Path(tmp.name)
+    regra = {"name": "canal_titular", "rules_file": "config/rules/canal_titular.yaml",
+             "params": {}}
+
+    def grava(extra, arquivo):
+        # Repositorio e banco apontados para area temporaria: a verificacao nao
+        # deve criar artefato algum no repositorio de trabalho.
+        d = {k: v for k, v in padrao.items()}
+        d["repository"] = {"name": "filesystem",
+                           "params": {"base_path": str(base / "repo")}}
+        d["result_store"] = {"name": "sqlite",
+                             "params": {"db_path": str(base / "r.sqlite")}}
+        d["tests"] = list(padrao["tests"]) + [extra]
+        alvo = base / arquivo
+        alvo.write_text(yaml.safe_dump(d, allow_unicode=True), encoding="utf-8")
+        return alvo
+
+    try:
+        Orchestrator(grava(regra, "colide.yaml"))
+        rel.afere(False, "guarda: protocolo com variavel duplicada e recusado")
+    except ValueError as e:
+        rel.afere("mesma variavel" in str(e),
+                  "guarda: protocolo com variavel duplicada e recusado",
+                  str(e)[:130])
+    except Exception as e:                                   # noqa: BLE001
+        rel.afere(False, "guarda: protocolo com variavel duplicada e recusado",
+                  f"{type(e).__name__}: {e}"[:180])
+
+    com_sufixo = dict(regra, params={"variavel_sufixo": "__regra"})
+    orq = None
+    try:
+        orq = Orchestrator(grava(com_sufixo, "sufixo.yaml"))
+        rel.afere(True, "sufixo: os dois regimes convivem em colunas distintas",
+                  "tem_canal_titular e tem_canal_titular__regra")
+    except Exception as e:                                   # noqa: BLE001
+        rel.afere(False, "sufixo: os dois regimes convivem em colunas distintas",
+                  f"{type(e).__name__}: {e}"[:180])
+    finally:
+        # O orquestrador abre a camada de resultados na construcao. Deixar a
+        # conexao aberta impede a remocao do diretorio temporario no Windows.
+        loja = getattr(orq, "store", None)
+        if loja is not None:
+            try:
+                loja.close()
+            except Exception:                                # noqa: BLE001
+                pass
+    tmp.cleanup()
+
+
 ITENS = {
     2: ("Artefato de modelo", "tests_unit/test_artefato.py", item_2),
     3: ("Exportacao dos artefatos textuais", "tests_unit/test_artefato.py", item_3),
@@ -794,6 +930,7 @@ ITENS = {
     5: ("Atributos do canal e artefato de Firth", "tests_unit/test_artefato.py", item_5),
     6: ("Plugin do canal por classificacao", "tests_unit/test_canal_titular_ml.py", item_6),
     7: ("Teto comparativo por representacao densa", "tests_unit/test_bertimbau.py", item_7),
+    8: ("Protocolo executavel e guarda contra colisao", "tests_unit/", item_8),
 }
 
 

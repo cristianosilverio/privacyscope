@@ -137,6 +137,10 @@ class CanalTitularMLTest(VariableTest):
 
         artefato = self._artefato(params)
         janela = int(artefato.extrator_parametros.get("janela", JANELA_PADRAO))
+        # Este plugin produz a MESMA variavel que o detector por regra. Para que os
+        # dois regimes convivam num run, o protocolo declara o sufixo; sem ele, a
+        # guarda do orquestrador recusa a duplicidade.
+        sufixo = params.get("variavel_sufixo", "")
 
         html = self.html_concatenado(evidence)
         atributos = extrai_atributos(
@@ -155,7 +159,7 @@ class CanalTitularMLTest(VariableTest):
         }
         return VariableResult(
             domain_url=evidence.domain.url,
-            variable_name=self.variable_name,
+            variable_name=f"{self.variable_name}{sufixo}",
             value=bool(sinal),
             confidence=max(0.0, min(1.0, float(prob))),
             audit_trail=trilha,
