@@ -423,11 +423,145 @@ def item_4(rel: Relatorio, verboso: bool) -> None:
         except excecao:
             rel.afere(True, f"recusa: {descricao}")
 
+# ===========================================================================
+def item_5(rel: Relatorio, verboso: bool) -> None:
+    """Extracao dos atributos como biblioteca, e artefato do estimador de Firth.
+
+    O que se exige, e por que:
+
+      MIGRACAO NEUTRA  A biblioteca reproduz, sobre material real, exatamente os
+                  atributos que a matriz do ajuste registra. Sem isso, treino e
+                  inferencia extrairiam sinais distintos do mesmo sitio.
+      COEFICIENTES  O artefato reproduz a equacao publicada em
+                  outputs/coeficientes_canal.csv. Divergencia significaria que o
+                  arcabouco opera com equacao diferente da que o trabalho reporta.
+      ORDEM DOS ATRIBUTOS  A inferencia recebe mapeamento, nunca vetor, e ordena
+                  contra os nomes gravados. Coeficiente em coluna trocada produz
+                  probabilidade plausivel e errada, que nada acusa.
+      TIPOS NAO SE CONFUNDEM  Ler artefato de texto como estruturado, ou o
+                  contrario, interrompe.
+    """
+    import csv
+    import glob
+    import json
+    import math
+    import os
+    import tarfile
+
+    import numpy as np
+    from privacyscope.features.canal_titular import (
+        ATRIBUTOS, JANELA_PADRAO, VERSAO_EXTRATOR, extrai_atributos)
+    from privacyscope.models.artefato import ArtefatoCorrompido, le, le_canal
+
+    matriz = REPO / "outputs" / "features_canal_N200.csv"
+    if not matriz.exists():
+        rel.afere(False, "matriz de atributos disponivel",
+                  "rode antes: python scripts/extrair_features_canal.py --janela 200")
+        return
+    with matriz.open(encoding="utf-8", newline="") as fh:
+        M = {r["site_id"]: r for r in csv.DictReader(fh, delimiter=";")}
+    rel.afere(all(a in next(iter(M.values())) for a in ATRIBUTOS),
+              "matriz traz os oito atributos", f"{len(M)} sitios")
+
+    # --- migracao neutra, sobre material real
+    enriquecimento = REPO / "data" / "b9" / "pdf_enrichment"
+    conferidos = divergentes = 0
+    exemplos = []
+    for tar in sorted(glob.glob(str(REPO / "data" / "b9" / "raw" / "*.tar.gz")))[:25]:
+        host = os.path.basename(tar).split("__")[-1].replace(".tar.gz", "")
+        if host not in M:
+            continue
+        htmls, meta = [], {}
+        with tarfile.open(tar, "r:gz") as tf:
+            for m in tf.getmembers():
+                n = m.name
+                if n.endswith("/html_root.html") or (
+                        "/html_subpages/" in n and n.endswith(".html")):
+                    htmls.append(tf.extractfile(m).read().decode("utf-8", "ignore"))
+                elif n.endswith("/meta.json"):
+                    meta = json.load(tf.extractfile(m))
+        texto_pdf = ""
+        d = enriquecimento / host
+        if d.is_dir():
+            import re as _re
+            texto_pdf = _re.sub(r"\s+", " ", " ".join(
+                t.read_text(encoding="utf-8", errors="ignore") for t in sorted(d.glob("*.txt"))))
+        obtido = extrai_atributos("\n".join(htmls), url=f"https://{host}",
+                                  subpage_selection=(meta.get("subpage_selection") or {}),
+                                  texto_pdf=texto_pdf, janela=JANELA_PADRAO)
+        esperado = {a: int(M[host][a]) for a in ATRIBUTOS}
+        conferidos += 1
+        if obtido != esperado:
+            divergentes += 1
+            if len(exemplos) < 3:
+                dif = [a for a in ATRIBUTOS if obtido[a] != esperado[a]]
+                exemplos.append(f"{host}: {dif}")
+    rel.afere(conferidos > 0 and divergentes == 0,
+              "migracao neutra: biblioteca == matriz do ajuste",
+              f"{conferidos} sitios conferidos, {divergentes} divergentes"
+              + ("\n" + "\n".join(exemplos) if exemplos else ""))
+
+    # --- artefato
+    modelos = REPO / "models"
+    manifesto = modelos / "MANIFESTO.csv"
+    if not manifesto.exists():
+        rel.afere(False, "artefato exportado",
+                  "rode antes: python scripts/exportar_modelo_canal.py")
+        return
+    with manifesto.open(encoding="utf-8", newline="") as fh:
+        reg = {r["variavel"]: r for r in csv.DictReader(fh, delimiter=";")}
+    if "tem_canal_titular" not in reg:
+        rel.afere(False, "artefato do canal no manifesto",
+                  "rode antes: python scripts/exportar_modelo_canal.py")
+        return
+    linha = reg["tem_canal_titular"]
+    a = le_canal(modelos / linha["arquivo"], linha["sha256"])
+    rel.afere(a.sha256 == linha["sha256"], "identidade confere com o manifesto",
+              a.sha256[:32] + "...")
+    rel.afere(a.extrator_versao == VERSAO_EXTRATOR,
+              "proveniencia: versao do extrator",
+              f"{a.extrator_versao} (biblioteca: {VERSAO_EXTRATOR})")
+    rel.afere(a.atributos == tuple(ATRIBUTOS), "ordem dos atributos preservada")
+
+    pub = REPO / "outputs" / "coeficientes_canal.csv"
+    if pub.exists():
+        with pub.open(encoding="utf-8", newline="") as fh:
+            C = {r["termo"]: float(r["beta"]) for r in csv.DictReader(fh, delimiter=";")}
+        difs = [abs(a.intercepto - C["intercepto"])] + [
+            abs(b - C[n]) for n, b in zip(a.atributos, a.coeficientes) if n in C]
+        rel.afere(max(difs) < 1e-6, "artefato reproduz a equacao publicada",
+                  f"maior diferenca {max(difs):.2e} sobre {len(difs)} coeficientes")
+
+    p1 = a.probabilidade({n: 1 for n in a.atributos})
+    p2 = a.probabilidade({n: 1 for n in reversed(a.atributos)})
+    esperado = 1 / (1 + math.exp(-(a.intercepto + float(np.sum(a.coeficientes)))))
+    rel.afere(p1 == p2 and abs(p1 - esperado) < 1e-12,
+              "ordenacao pelos nomes, e nao pela ordem do mapeamento",
+              f"probabilidade com todos os atributos ativos: {p1:.4f}")
+    try:
+        a.probabilidade({n: 1 for n in a.atributos[:-1]})
+        rel.afere(False, "recusa: atributo ausente")
+    except ValueError:
+        rel.afere(True, "recusa: atributo ausente")
+
+    if "finalidade" in reg:
+        try:
+            le_canal(modelos / reg["finalidade"]["arquivo"])
+            rel.afere(False, "recusa: artefato de texto lido como estruturado")
+        except ArtefatoCorrompido:
+            rel.afere(True, "recusa: artefato de texto lido como estruturado")
+    try:
+        le(modelos / linha["arquivo"])
+        rel.afere(False, "recusa: artefato estruturado lido como de texto")
+    except ArtefatoCorrompido:
+        rel.afere(True, "recusa: artefato estruturado lido como de texto")
+
 
 ITENS = {
     2: ("Artefato de modelo", "tests_unit/test_artefato.py", item_2),
     3: ("Exportacao dos artefatos textuais", "tests_unit/test_artefato.py", item_3),
     4: ("Plugins das variaveis textuais", "tests_unit/test_ml_texto.py", item_4),
+    5: ("Atributos do canal e artefato de Firth", "tests_unit/test_artefato.py", item_5),
 }
 
 

@@ -183,3 +183,84 @@ def test_regularizacao_e_proveniencia_e_nao_afeta_a_inferencia(tmp_path):
     assert a.regularizacao == 1.0 and b.regularizacao == 80.0
     assert np.allclose(a.probabilidades(TEXTOS), b.probabilidades(TEXTOS))
     assert s1 != s2, "artefatos com proveniencia distinta tem identidades distintas"
+
+
+# --------------------------------------------------------------------------
+# Artefato sobre atributos estruturados — o classificador do canal do titular
+# --------------------------------------------------------------------------
+from privacyscope.models.artefato import ArtefatoCanal, grava_canal, le_canal  # noqa: E402
+
+ATRIB = ("F1", "F2", "F3")
+COEF = [1.5, -0.8, 0.3]
+
+
+@pytest.fixture
+def canal(tmp_path):
+    caminho = tmp_path / "canal.npz"
+    sha = grava_canal(caminho, variavel="tem_canal_titular", atributos=ATRIB,
+                      coeficientes=COEF, intercepto=-2.0, limiar=0.5,
+                      extrator_versao="1.0.0", extrator_parametros={"janela": 200},
+                      corpo_sha256="abc", n_observacoes=207)
+    return caminho, sha
+
+
+def test_canal_ida_e_volta(canal):
+    caminho, sha = canal
+    a = le_canal(caminho, sha)
+    assert a.atributos == ATRIB and a.limiar == 0.5
+    assert a.extrator_versao == "1.0.0" and a.n_observacoes == 207
+    assert np.allclose(a.coeficientes, COEF)
+
+
+def test_canal_ordena_pelos_nomes_gravados(canal):
+    """O risco principal deste artefato e coeficiente atribuido a coluna trocada:
+    produz probabilidade plausivel e errada, sem que nada acuse."""
+    caminho, sha = canal
+    a = le_canal(caminho, sha)
+    direto = a.probabilidade({"F1": 1, "F2": 0, "F3": 1})
+    baguncado = a.probabilidade({"F3": 1, "F1": 1, "F2": 0})
+    assert direto == baguncado
+    esperado = 1 / (1 + math.exp(-(-2.0 + 1.5 + 0.3)))
+    assert direto == pytest.approx(esperado)
+
+
+def test_canal_atributo_ausente_interrompe(canal):
+    caminho, sha = canal
+    a = le_canal(caminho, sha)
+    with pytest.raises(ValueError, match="atributos ausentes"):
+        a.probabilidade({"F1": 1, "F2": 0})
+
+
+def test_canal_decide_sob_o_limiar(canal):
+    caminho, sha = canal
+    a = le_canal(caminho, sha)
+    p, sinal = a.decide({"F1": 1, "F2": 0, "F3": 1})
+    assert sinal == (p >= 0.5)
+
+
+def test_canal_recusa_nomes_repetidos(tmp_path):
+    with pytest.raises(ValueError, match="repetidos"):
+        grava_canal(tmp_path / "x.npz", variavel="v", atributos=("A", "A"),
+                    coeficientes=[1.0, 2.0], intercepto=0.0)
+
+
+def test_canal_recusa_dimensao_incompativel(tmp_path):
+    with pytest.raises(ValueError, match="dimensoes incompativeis"):
+        grava_canal(tmp_path / "x.npz", variavel="v", atributos=("A", "B"),
+                    coeficientes=[1.0], intercepto=0.0)
+
+
+def test_leitores_nao_se_confundem(artefato, canal):
+    """Ler artefato de texto como se fosse de canal, ou o contrario, tem de parar."""
+    caminho_texto, sha_texto, _, _ = artefato
+    caminho_canal, sha_canal = canal
+    with pytest.raises(ArtefatoCorrompido, match="tipo"):
+        le_canal(caminho_texto, sha_texto)
+    with pytest.raises(ArtefatoCorrompido, match="tipo"):
+        le(caminho_canal, sha_canal)
+
+
+def test_canal_identidade_divergente_interrompe(canal):
+    caminho, _ = canal
+    with pytest.raises(ArtefatoCorrompido):
+        le_canal(caminho, "0" * 64)

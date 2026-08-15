@@ -62,7 +62,8 @@ from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
-__all__ = ["Artefato", "ArtefatoCorrompido", "grava", "le", "resumo_arquivo",
+__all__ = ["Artefato", "ArtefatoCanal", "ArtefatoCorrompido", "grava",
+           "grava_canal", "le", "le_canal", "resumo_arquivo", "resumo_texto",
            "VERSAO_FORMATO"]
 
 VERSAO_FORMATO = "1"
@@ -275,6 +276,7 @@ def grava(caminho: Path | str, *, variavel: str, vocabulario: Mapping[str, int],
 
     meta = {
         "versao_formato": VERSAO_FORMATO,
+        "tipo": "texto_esparso",
         "variavel": variavel,
         "intercepto": float(intercepto),
         "limiar": float(limiar),
@@ -315,8 +317,16 @@ def le(caminho: Path | str, sha256_esperado: str | None = None) -> Artefato:
             f"Substitua o artefato ou atualize o protocolo — o arcabouco nao "
             f"prossegue com modelo de identidade incerta.")
 
+    # O tipo e conferido ANTES dos arranjos: ler primeiro produziria erro de chave
+    # ausente, cuja mensagem nao diz que o artefato e de outra especie.
     with np.load(caminho, allow_pickle=True) as z:
         meta = json.loads(str(z["metadados"]))
+        # Artefatos gravados antes da distincao de tipo nao trazem o campo; a
+        # ausencia significa representacao esparsa, entao o unico tipo existente.
+        if meta.get("tipo", "texto_esparso") != "texto_esparso":
+            raise ArtefatoCorrompido(
+                f"o artefato e do tipo {meta.get('tipo')!r}; este leitor espera "
+                f"'texto_esparso'. Artefato trocado no protocolo.")
         termos = [str(t) for t in z["termos"]]
         idf = np.asarray(z["idf"], dtype=np.float64)
         coef = np.asarray(z["coeficientes"], dtype=np.float64)
@@ -341,3 +351,125 @@ def le(caminho: Path | str, sha256_esperado: str | None = None) -> Artefato:
         ajustado_em=meta.get("ajustado_em", ""),
         gerado_por=meta.get("gerado_por", ""),
         sha256=sha)
+
+
+# ===========================================================================
+# Modelo sobre atributos estruturados — o classificador do canal do titular
+# ===========================================================================
+@dataclass(frozen=True)
+class ArtefatoCanal:
+    """Estimador sobre atributos binarios, ajustado por verossimilhanca penalizada.
+
+    Difere do artefato de representacao esparsa em natureza, e nao apenas em
+    tamanho: nao ha vocabulario nem ponderacao documental, e a entrada e um
+    conjunto nomeado de atributos extraidos por procedimento proprio. O que se
+    conserva e o essencial — identidade criptografica, proveniencia e ausencia de
+    objeto serializado.
+
+    A ORDEM DOS ATRIBUTOS E O RISCO PRINCIPAL. Coeficientes atribuidos a colunas
+    trocadas produzem probabilidade plausivel e errada, e nenhuma verificacao a
+    jusante acusa. Por isso a inferencia nao recebe vetor: recebe um MAPEAMENTO
+    nome -> valor, e a ordenacao e feita aqui, contra os nomes gravados.
+    """
+
+    variavel: str
+    atributos: tuple[str, ...]
+    coeficientes: np.ndarray
+    intercepto: float
+    limiar: float = 0.5
+    extrator_versao: str = ""
+    extrator_parametros: Mapping[str, float] = None   # type: ignore[assignment]
+    corpo_sha256: str = ""
+    n_observacoes: int = 0
+    ajustado_em: str = ""
+    gerado_por: str = ""
+    sha256: str = ""
+
+    def vetoriza(self, atributos: Mapping[str, float]) -> np.ndarray:
+        """Ordena os atributos conforme os nomes gravados, e recusa o que faltar."""
+        faltando = [a for a in self.atributos if a not in atributos]
+        if faltando:
+            raise ValueError(
+                f"atributos ausentes para {self.variavel}: {faltando}. O extrator "
+                f"e o artefato precisam ser da mesma versao.")
+        return np.array([float(atributos[a]) for a in self.atributos], dtype=float)
+
+    def probabilidade(self, atributos: Mapping[str, float]) -> float:
+        eta = float(np.dot(self.vetoriza(atributos), self.coeficientes) + self.intercepto)
+        return float(_sigmoide(np.array([eta]))[0])
+
+    def decide(self, atributos: Mapping[str, float]) -> tuple[float, bool]:
+        p = self.probabilidade(atributos)
+        return p, p >= self.limiar
+
+    def descricao(self) -> dict:
+        return {"variavel": self.variavel, "modelo_sha256": self.sha256,
+                "extrator_versao": self.extrator_versao,
+                "corpo_sha256": self.corpo_sha256, "limiar": self.limiar,
+                "n_atributos": len(self.atributos),
+                "n_observacoes": self.n_observacoes,
+                "ajustado_em": self.ajustado_em}
+
+
+def grava_canal(caminho: Path | str, *, variavel: str, atributos: Sequence[str],
+                coeficientes: Sequence[float], intercepto: float,
+                limiar: float = 0.5, extrator_versao: str = "",
+                extrator_parametros: Mapping | None = None,
+                corpo_sha256: str = "", n_observacoes: int = 0,
+                gerado_por: str = "") -> str:
+    coeficientes = np.asarray(coeficientes, dtype=np.float64)
+    if len(atributos) != len(coeficientes):
+        raise ValueError(f"dimensoes incompativeis: {len(atributos)} atributos, "
+                         f"{len(coeficientes)} coeficientes")
+    if len(set(atributos)) != len(atributos):
+        raise ValueError("nomes de atributo repetidos; a ordenacao ficaria ambigua")
+    meta = {
+        "versao_formato": VERSAO_FORMATO,
+        "tipo": "canal_estruturado",
+        "variavel": variavel,
+        "intercepto": float(intercepto),
+        "limiar": float(limiar),
+        "extrator_versao": extrator_versao,
+        "extrator_parametros": dict(extrator_parametros or {}),
+        "corpo_sha256": corpo_sha256,
+        "n_observacoes": int(n_observacoes),
+        "ajustado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "gerado_por": gerado_por,
+    }
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        caminho,
+        metadados=np.array(json.dumps(meta, ensure_ascii=False, sort_keys=True)),
+        atributos=np.array(list(atributos), dtype=object),
+        coeficientes=coeficientes)
+    return resumo_arquivo(caminho)
+
+
+def le_canal(caminho: Path | str, sha256_esperado: str | None = None) -> ArtefatoCanal:
+    caminho = Path(caminho)
+    sha = resumo_arquivo(caminho)
+    if sha256_esperado and sha != sha256_esperado:
+        raise ArtefatoCorrompido(
+            f"o artefato {caminho.name} nao corresponde ao declarado.\n"
+            f"  declarado no protocolo: {sha256_esperado}\n"
+            f"  encontrado no arquivo : {sha}\n"
+            f"Substitua o artefato ou atualize o protocolo — o arcabouco nao "
+            f"prossegue com modelo de identidade incerta.")
+    with np.load(caminho, allow_pickle=True) as z:
+        meta = json.loads(str(z["metadados"]))
+        if meta.get("tipo") != "canal_estruturado":
+            raise ArtefatoCorrompido(
+                f"o artefato e do tipo {meta.get('tipo', 'texto_esparso')!r}; este "
+                f"leitor espera 'canal_estruturado'. Artefato trocado no protocolo.")
+        atributos = tuple(str(a) for a in z["atributos"])
+        coef = np.asarray(z["coeficientes"], dtype=np.float64)
+    return ArtefatoCanal(
+        variavel=meta["variavel"], atributos=atributos, coeficientes=coef,
+        intercepto=float(meta["intercepto"]), limiar=float(meta["limiar"]),
+        extrator_versao=meta.get("extrator_versao", ""),
+        extrator_parametros=meta.get("extrator_parametros", {}),
+        corpo_sha256=meta.get("corpo_sha256", ""),
+        n_observacoes=int(meta.get("n_observacoes", 0)),
+        ajustado_em=meta.get("ajustado_em", ""),
+        gerado_por=meta.get("gerado_por", ""), sha256=sha)

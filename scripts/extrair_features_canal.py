@@ -57,98 +57,17 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
+
+# A extracao tem implementacao canonica na biblioteca. Este programa apenas le o
+# material congelado e cruza o resultado com a rotulagem. Reimplementa-la aqui faria
+# treino e inferencia executarem codigo distinto para a mesma finalidade.
+from privacyscope.features.canal_titular import (          # noqa: E402
+    ATRIBUTOS, JANELA_PADRAO, dominio_base, extrai_atributos, visivel,
+)
+
 RAW = REPO / "data" / "b9" / "raw"
 ENRICH = REPO / "data" / "b9" / "pdf_enrichment"
-
-EMAIL_RE = re.compile(
-    r"\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(?:com|com\.br|br|gov\.br|org|org\.br|edu|edu\.br|net|net\.br))\b",
-    re.IGNORECASE)
-PREFIXOS_LGPD = ("dpo", "encarregado", "encarregada", "privacidade", "lgpd",
-                 "protecaodedados", "protecao.dados", "protecao_dados", "meusdados")
-BLOCKLIST = frozenset({
-    "cloudflare.com", "cloudfront.net", "akamai.com", "akamaihd.net", "fastly.com",
-    "amazonaws.com", "wordpress.com", "automattic.com", "shopify.com", "wix.com",
-    "wixpress.com", "squarespace.com", "hubspot.com", "zendesk.com", "salesforce.com",
-    "google.com", "gstatic.com", "adobe.com", "sentry.io", "example.com",
-})
-ANC_ENCARREGADO = re.compile(r"\bencarregad[oa]\b|\bdpo\b|data\s+protection\s+officer", re.I)
-ANC_DIREITOS = re.compile(
-    r"portal\s+do\s+titular|central\s+do\s+titular|canal\s+do\s+titular|seus\s+direitos"
-    r"|direitos\s+do\s+titular|exerc\w+\s+(?:de\s+|seus\s+)?direitos|requisi\w+\s+lgpd"
-    r"|solicita\w+\s+lgpd|titular\s+dos\s+dados", re.I)
-ANC_QUALQUER = re.compile(f"({ANC_ENCARREGADO.pattern})|({ANC_DIREITOS.pattern})", re.I)
-TEL_RE = re.compile(r"tel:[+0-9()\s.\-]{8,}|\(?\d{2}\)?\s?\d{4,5}[\-\s.]?\d{4}")
-PLAUSIBILIDADE = ("titular", "direito", "lgpd", "exercer", "exercicio", "exercício",
-                  "encarregado", "dpo", "solicitacao", "solicitação", "requisicao",
-                  "requisição", "fale conosco")
-MIN_SUBPAGE_BYTES = 500
-
-
-class _Vis(HTMLParser):
-    SKIP = {"script", "style", "noscript", "head"}
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.buf, self.skip = [], 0
-
-    def handle_starttag(self, t, a):
-        if t in self.SKIP:
-            self.skip += 1
-
-    def handle_endtag(self, t):
-        if t in self.SKIP and self.skip:
-            self.skip -= 1
-
-    def handle_data(self, d):
-        if not self.skip and d.strip():
-            self.buf.append(d.strip())
-
-
-def visivel(html: str) -> str:
-    p = _Vis()
-    try:
-        p.feed(html)
-    except Exception:
-        pass
-    return re.sub(r"\s+", " ", " ".join(p.buf))
-
-
-def dominio_base(url: str) -> str:
-    d = re.sub(r"^https?://", "", (url or "")).split("/")[0].lower()
-    return d[4:] if d.startswith("www.") else d
-
-
-def mesmo_dominio(email_dom: str, site_dom: str) -> bool:
-    e, s = email_dom.lower().strip(), site_dom.lower().strip()
-    return e == s or e.endswith("." + s) or s.endswith("." + e)
-
-
-def eh_provedor(dom: str) -> bool:
-    d = dom.lower()
-    return any(d == p or d.endswith("." + p) for p in BLOCKLIST)
-
-
-def posicoes_ancora(texto: str) -> list:
-    """Posicoes das ancoras no texto, calculadas uma unica vez por corpus.
-    O recalculo por ocorrencia domina o tempo em documentos extensos."""
-    return [m.start() for m in ANC_QUALQUER.finditer(texto)]
-
-
-def perto_pos(anc, alvo_re, texto: str, janela: int) -> bool:
-    """True se alguma ocorrencia de alvo_re dista <= janela caracteres de uma
-    ancora. A busca binaria sobre as posicoes ordenadas evita varredura linear."""
-    if not anc:
-        return False
-    import bisect
-    for m in alvo_re.finditer(texto):
-        p = m.start()
-        i = bisect.bisect_left(anc, p)
-        for j in (i - 1, i):
-            if 0 <= j < len(anc) and abs(p - anc[j]) <= janela:
-                return True
-    return False
-
-
 def carregar(tar_path: Path):
     """Le o tarball (modo leitura). Devolve (html_bruto, texto_visivel, subpage_selection)."""
     htmls, meta = [], {}
@@ -185,60 +104,10 @@ def texto_pdf(host: str) -> str:
 
 
 def extrair(host: str, url: str, tar_path: Path, janela: int) -> dict:
-    html, vis, subsel = carregar(tar_path)
-    vis_total = (vis + " " + texto_pdf(host)).strip()
-    sdom = dominio_base(url)
-
-    emails = {e.lower() for e in EMAIL_RE.findall(vis_total)} | {e.lower() for e in EMAIL_RE.findall(html)}
-    f1 = f2 = 0
-    genericos = []
-    for e in emails:
-        user, dom = e.split("@", 1)
-        if eh_provedor(dom):
-            continue
-        if any(user.startswith(p) for p in PREFIXOS_LGPD):
-            if mesmo_dominio(dom, sdom):
-                f1 = 1
-            else:
-                f2 = 1
-        else:
-            genericos.append(e)
-
-    anc_vis = posicoes_ancora(vis_total)
-    f3 = 0
-    if genericos:
-        # alternancia unica com todos os enderecos, para uma so varredura
-        alt = re.compile("|".join(re.escape(e) for e in genericos[:60]), re.I)
-        f3 = 1 if perto_pos(anc_vis, alt, vis_total, janela) else 0
-
-    f4 = 0
-    for cat in ("canal_titular", "encarregado"):
-        for item in (subsel.get(cat) or []):
-            f4 = 1
-    if f4 and not any(k in vis_total.lower() for k in PLAUSIBILIDADE):
-        f4 = 0
-    if f4 and len(html) < MIN_SUBPAGE_BYTES:
-        f4 = 0
-
-    # F5: <form> ou <a> cujo texto casa ancora de direitos
-    f5 = 0
-    htm = html[:2_000_000]          # teto de tamanho: portais extensos degradam a regex
-    anc_html = posicoes_ancora(htm)
-    if perto_pos(anc_html, re.compile(r"<form\b", re.I), htm, janela):
-        f5 = 1
-    if not f5:
-        for m in re.finditer(r"<a\b[^>]{0,400}>([^<]{0,120})</a>", htm, re.I):
-            if ANC_DIREITOS.search(m.group(1) or "") and not re.search(
-                    r'href="(mailto:|tel:)', m.group(0), re.I):
-                f5 = 1
-                break
-
-    f6 = 1 if perto_pos(anc_vis, TEL_RE, vis_total, janela) else 0
-    f7 = 1 if ANC_ENCARREGADO.search(vis_total) else 0
-    f8 = 1 if ANC_DIREITOS.search(vis_total) else 0
-    return dict(F1_email_lgpd_proprio=f1, F2_email_lgpd_externo=f2, F3_email_generico_ancorado=f3,
-                F4_subpagina_titular=f4, F5_contato_ancorado=f5, F6_telefone_ancorado=f6,
-                F7_ancora_encarregado=f7, F8_ancora_direitos=f8)
+    """Le o material congelado e delega a extracao a biblioteca."""
+    html, _vis, subsel = carregar(tar_path)
+    return extrai_atributos(html, url=url, subpage_selection=subsel,
+                            texto_pdf=texto_pdf(host), janela=janela)
 
 
 def main() -> int:
