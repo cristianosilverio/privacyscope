@@ -54,6 +54,9 @@ from privacyscope.tests.banner_cookies import BannerCookiesTest
 from privacyscope.tests.canal_titular import CanalTitularTest
 from privacyscope.tests.canal_titular_ml import CanalTitularMLTest
 from privacyscope.tests.politica_privacidade import PoliticaPrivacidadeTest
+from privacyscope.tests.bertimbau import (
+    DireitosDensaTest, FinalidadeDensaTest, TransfDensaTest,
+)
 from privacyscope.tests.ml_texto import (
     DireitosTitularExplicadosTest, FinalidadeEspecificadaTest,
     TransfInternacionalDivulgadaTest,
@@ -95,6 +98,13 @@ VARIABLE_TESTS: dict[str, Type[VariableTest]] = {
     "finalidade_especificada": FinalidadeEspecificadaTest,
     "direitos_titular_explicados": DireitosTitularExplicadosTest,
     "transf_internacional_divulgada": TransfInternacionalDivulgadaTest,
+    # Teto comparativo por representacao densa. Registrado e NAO habilitado na
+    # configuracao padrao: custa horas por execucao, exige pesos que nao
+    # acompanham o repositorio, e produz as mesmas variaveis — declarar os dois
+    # no mesmo run exige `variavel_sufixo`, sob pena de um sobrescrever o outro.
+    "finalidade_especificada_densa": FinalidadeDensaTest,
+    "direitos_titular_explicados_densa": DireitosDensaTest,
+    "transf_internacional_divulgada_densa": TransfDensaTest,
 }
 
 OUTPUT_RENDERERS: dict[str, Type[OutputRenderer]] = {}

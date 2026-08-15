@@ -691,12 +691,109 @@ def item_6(rel: Relatorio, verboso: bool) -> None:
             rel.afere(True, f"recusa: {descricao}")
 
 
+# ===========================================================================
+def item_7(rel: Relatorio, verboso: bool) -> None:
+    """Teto comparativo por representacao densa, registrado e nao habilitado.
+
+    O que se exige, e por que:
+
+      REGISTRADO E DISTINTO  Os tres tetos resolvem para classe propria e nao
+                  substituem os plugins da representacao esparsa.
+      IDENTIDADE DO CODIFICADOR  O resumo cobre pesos E tokenizador, e artefato sem
+                  ele e recusado na gravacao. Rotulo de modelo nao detecta troca de
+                  conteudo, e vocabulario distinto produz vetor distinto.
+      NAO AUTOCONTIDO  A dependencia dos pesos externos e propriedade declarada, e
+                  distingue este artefato dos outros quatro.
+      COLISAO DE NOME  Produz as mesmas variaveis que a esparsa; o sufixo permite
+                  compara-los lado a lado sem que um sobrescreva o outro.
+    """
+    import csv
+    import tempfile
+
+    import numpy as np
+    from privacyscope.core.plugin_registry import resolve
+    from privacyscope.models.artefato import (
+        ArtefatoCorrompido, grava_denso, le_denso, resumo_diretorio)
+
+    NOMES = {"finalidade_especificada_densa": ("finalidade", "finalidade_especificada"),
+             "direitos_titular_explicados_densa": ("direitos_titular",
+                                                   "direitos_titular_explicados"),
+             "transf_internacional_divulgada_densa": ("transf_internacional",
+                                                      "transf_internacional_divulgada")}
+    for nome, (artefato, variavel) in NOMES.items():
+        c = resolve("variable_tests", nome)
+        esparso = resolve("variable_tests", variavel)
+        rel.afere(c.variavel_artefato == artefato and c.variable_name == variavel
+                  and c is not esparso,
+                  f"[{nome}] registrado, distinto do plugin esparso",
+                  f"{c.__name__} produz {c.variable_name}")
+
+    tmp = tempfile.TemporaryDirectory(prefix="privacyscope-teto-")
+    base = Path(tmp.name)
+    d = base / "cod"
+    d.mkdir()
+    (d / "config.json").write_bytes(b'{"model_type":"bert"}')
+    (d / "vocab.txt").write_bytes("[PAD]\n[UNK]\ndados\n".encode())
+    (d / "model.safetensors").write_bytes(b"pesos")
+    cod_sha = resumo_diretorio(d)
+
+    caminho = base / "denso.npz"
+    sha = grava_denso(caminho, variavel="finalidade", codificador="modelo/teste",
+                      codificador_sha256=cod_sha, agregacao="media", max_len=256,
+                      coeficientes=np.ones(8), intercepto=0.0, limiar=0.5,
+                      preparo_versao="1.0.0")
+    a = le_denso(caminho, sha)
+    rel.afere(a.codificador_sha256 == cod_sha,
+              "identidade do codificador gravada no artefato", cod_sha[:32] + "...")
+
+    try:
+        grava_denso(base / "x.npz", variavel="v", codificador="m",
+                    codificador_sha256="", agregacao="media", max_len=256,
+                    coeficientes=[1.0], intercepto=0.0, limiar=0.5)
+        rel.afere(False, "recusa: artefato denso sem resumo do codificador")
+    except ValueError:
+        rel.afere(True, "recusa: artefato denso sem resumo do codificador")
+
+    (d / "vocab.txt").write_bytes("[PAD]\n[UNK]\noutro\n".encode())
+    try:
+        a.confere_codificador(d)
+        rel.afere(False, "recusa: tokenizador trocado")
+    except ArtefatoCorrompido:
+        rel.afere(True, "recusa: tokenizador trocado",
+                  "trocar apenas o vocabulario ja altera a identidade")
+
+    try:
+        a.probabilidades(np.ones((2, 5)))
+        rel.afere(False, "recusa: dimensao incompativel")
+    except ValueError:
+        rel.afere(True, "recusa: dimensao incompativel")
+
+    v = np.arange(8, dtype=float) + 1
+    rel.afere(abs(float(a.probabilidades(v)[0]) - float(a.probabilidades(v * 9)[0])) < 1e-12,
+              "escala do vetor nao altera a decisao",
+              "a cabeca foi ajustada sobre vetores normalizados")
+
+    manifesto = REPO / "models" / "MANIFESTO.csv"
+    exportados = []
+    if manifesto.exists():
+        with manifesto.open(encoding="utf-8", newline="") as fh:
+            exportados = [r["variavel"] for r in csv.DictReader(fh, delimiter=";")
+                          if r["variavel"].endswith("__denso")]
+    rel.afere(True,
+              "artefatos do teto exportados" if exportados
+              else "artefatos do teto nao exportados (opcional, exige os pesos)",
+              ", ".join(exportados) if exportados else
+              "exporte com: python scripts/exportar_modelo_bertimbau.py --codificador <dir>")
+    tmp.cleanup()
+
+
 ITENS = {
     2: ("Artefato de modelo", "tests_unit/test_artefato.py", item_2),
     3: ("Exportacao dos artefatos textuais", "tests_unit/test_artefato.py", item_3),
     4: ("Plugins das variaveis textuais", "tests_unit/test_ml_texto.py", item_4),
     5: ("Atributos do canal e artefato de Firth", "tests_unit/test_artefato.py", item_5),
     6: ("Plugin do canal por classificacao", "tests_unit/test_canal_titular_ml.py", item_6),
+    7: ("Teto comparativo por representacao densa", "tests_unit/test_bertimbau.py", item_7),
 }
 
 

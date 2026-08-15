@@ -62,9 +62,10 @@ from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
-__all__ = ["Artefato", "ArtefatoCanal", "ArtefatoCorrompido", "grava",
-           "grava_canal", "le", "le_canal", "resumo_arquivo", "resumo_texto",
-           "VERSAO_FORMATO"]
+__all__ = ["Artefato", "ArtefatoCanal", "ArtefatoDenso", "ArtefatoCorrompido",
+           "grava", "grava_canal", "grava_denso", "le", "le_canal", "le_denso",
+           "resumo_arquivo", "resumo_diretorio", "resumo_texto", "VERSAO_FORMATO",
+           "ARQUIVOS_CODIFICADOR"]
 
 VERSAO_FORMATO = "1"
 
@@ -471,5 +472,175 @@ def le_canal(caminho: Path | str, sha256_esperado: str | None = None) -> Artefat
         extrator_parametros=meta.get("extrator_parametros", {}),
         corpo_sha256=meta.get("corpo_sha256", ""),
         n_observacoes=int(meta.get("n_observacoes", 0)),
+        ajustado_em=meta.get("ajustado_em", ""),
+        gerado_por=meta.get("gerado_por", ""), sha256=sha)
+
+
+# ===========================================================================
+# Modelo sobre representacao densa — o teto comparativo
+# ===========================================================================
+# O codificador pre-treinado NAO cabe no artefato: sao centenas de megabytes de
+# pesos de terceiro. O que o artefato carrega e a cabeca ajustada — algumas
+# centenas de coeficientes — mais a IDENTIDADE do codificador, de modo que a
+# proveniencia se verifique sem transportar a fonte.
+#
+# O resumo cobre pesos E TOKENIZADOR. Vocabulario de subpalavras distinto produz
+# entrada distinta para os mesmos pesos, e portanto vetor distinto: conferir apenas
+# os pesos deixaria passar a troca que mais silenciosamente altera o resultado.
+ARQUIVOS_CODIFICADOR = (
+    "config.json", "model.safetensors", "pytorch_model.bin",
+    "tokenizer.json", "tokenizer_config.json", "vocab.txt",
+    "special_tokens_map.json",
+)
+
+
+def resumo_diretorio(caminho: Path | str,
+                     arquivos: Sequence[str] = ARQUIVOS_CODIFICADOR) -> str:
+    """Resumo do conjunto de arquivos relevantes de um diretorio de modelo.
+
+    Combina nome e conteudo de cada arquivo presente, em ordem determinista, de
+    sorte que renomear, acrescentar ou alterar qualquer um deles mude o resumo.
+    Arquivos ausentes sao ignorados: formatos distintos de serializacao coexistem
+    no ecossistema, e exigir todos recusaria diretorios legitimos.
+    """
+    base = Path(caminho)
+    h = hashlib.sha256()
+    encontrados = 0
+    for nome in sorted(arquivos):
+        alvo = base / nome
+        if not alvo.is_file():
+            continue
+        encontrados += 1
+        h.update(nome.encode("utf-8"))
+        h.update(b"\x00")
+        h.update(bytes.fromhex(resumo_arquivo(alvo)))
+    if not encontrados:
+        raise FileNotFoundError(
+            f"nenhum arquivo de modelo em {base}. Esperados, entre outros: "
+            f"{', '.join(ARQUIVOS_CODIFICADOR[:4])}")
+    return h.hexdigest()
+
+
+@dataclass(frozen=True)
+class ArtefatoDenso:
+    """Cabeca ajustada sobre representacao densa, com identidade do codificador.
+
+    Difere dos demais em um ponto que precisa ficar explicito: ele NAO e
+    autocontido. Reproduzir um resultado exige, alem deste arquivo, os pesos do
+    codificador — que nao acompanham o repositorio. E uma das razoes pelas quais a
+    representacao densa permanece teto comparativo, e nao mecanismo.
+    """
+
+    variavel: str
+    codificador: str
+    codificador_sha256: str
+    agregacao: str
+    max_len: int
+    coeficientes: np.ndarray
+    intercepto: float
+    limiar: float
+    regularizacao: float = 0.0
+    preparo_versao: str = ""
+    corpo_sha256: str = ""
+    ajustado_em: str = ""
+    gerado_por: str = ""
+    sha256: str = ""
+
+    def probabilidades(self, vetores: np.ndarray) -> np.ndarray:
+        """Probabilidade da classe positiva para cada vetor ja codificado."""
+        V = np.asarray(vetores, dtype=np.float64)
+        if V.ndim == 1:
+            V = V.reshape(1, -1)
+        if V.shape[1] != len(self.coeficientes):
+            raise ValueError(
+                f"vetores de {V.shape[1]} dimensoes para modelo de "
+                f"{len(self.coeficientes)}; codificador ou agregacao trocados")
+        V = V / np.maximum(np.linalg.norm(V, axis=1, keepdims=True), 1e-12)
+        return _sigmoide(V @ self.coeficientes + self.intercepto)
+
+    def decide(self, vetores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        p = self.probabilidades(vetores)
+        return p, (p >= self.limiar)
+
+    def confere_codificador(self, diretorio: Path | str) -> None:
+        """Recusa codificador cuja identidade divirja da gravada."""
+        obtido = resumo_diretorio(diretorio)
+        if obtido != self.codificador_sha256:
+            raise ArtefatoCorrompido(
+                f"o codificador em {diretorio} nao corresponde ao do ajuste.\n"
+                f"  gravado no artefato: {self.codificador_sha256}\n"
+                f"  encontrado no disco: {obtido}\n"
+                f"Pesos ou tokenizador distintos produzem vetores distintos, e a "
+                f"cabeca ajustada deixaria de corresponder a entrada.")
+
+    def descricao(self) -> dict:
+        return {"variavel": self.variavel, "modelo_sha256": self.sha256,
+                "codificador": self.codificador,
+                "codificador_sha256": self.codificador_sha256,
+                "agregacao": self.agregacao, "max_len": self.max_len,
+                "preparo_versao": self.preparo_versao,
+                "corpo_sha256": self.corpo_sha256, "limiar": self.limiar,
+                "ajustado_em": self.ajustado_em}
+
+
+def grava_denso(caminho: Path | str, *, variavel: str, codificador: str,
+                codificador_sha256: str, agregacao: str, max_len: int,
+                coeficientes: Sequence[float], intercepto: float, limiar: float,
+                regularizacao: float = 0.0, preparo_versao: str = "",
+                corpo_sha256: str = "", gerado_por: str = "") -> str:
+    coeficientes = np.asarray(coeficientes, dtype=np.float64)
+    if not codificador_sha256:
+        raise ValueError(
+            "o resumo do codificador e obrigatorio: sem ele o artefato identifica "
+            "o modelo por rotulo, e rotulo nao detecta troca de conteudo")
+    meta = {
+        "versao_formato": VERSAO_FORMATO,
+        "tipo": "denso",
+        "variavel": variavel,
+        "codificador": codificador,
+        "codificador_sha256": codificador_sha256,
+        "agregacao": agregacao,
+        "max_len": int(max_len),
+        "intercepto": float(intercepto),
+        "limiar": float(limiar),
+        "regularizacao": float(regularizacao),
+        "preparo_versao": preparo_versao,
+        "corpo_sha256": corpo_sha256,
+        "ajustado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "gerado_por": gerado_por,
+    }
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        caminho,
+        metadados=np.array(json.dumps(meta, ensure_ascii=False, sort_keys=True)),
+        coeficientes=coeficientes)
+    return resumo_arquivo(caminho)
+
+
+def le_denso(caminho: Path | str, sha256_esperado: str | None = None) -> ArtefatoDenso:
+    caminho = Path(caminho)
+    sha = resumo_arquivo(caminho)
+    if sha256_esperado and sha != sha256_esperado:
+        raise ArtefatoCorrompido(
+            f"o artefato {caminho.name} nao corresponde ao declarado.\n"
+            f"  declarado no protocolo: {sha256_esperado}\n"
+            f"  encontrado no arquivo : {sha}")
+    with np.load(caminho, allow_pickle=True) as z:
+        meta = json.loads(str(z["metadados"]))
+        if meta.get("tipo") != "denso":
+            raise ArtefatoCorrompido(
+                f"o artefato e do tipo {meta.get('tipo', 'texto_esparso')!r}; este "
+                f"leitor espera 'denso'. Artefato trocado no protocolo.")
+        coef = np.asarray(z["coeficientes"], dtype=np.float64)
+    return ArtefatoDenso(
+        variavel=meta["variavel"], codificador=meta["codificador"],
+        codificador_sha256=meta["codificador_sha256"],
+        agregacao=meta.get("agregacao", "media"), max_len=int(meta.get("max_len", 256)),
+        coeficientes=coef, intercepto=float(meta["intercepto"]),
+        limiar=float(meta["limiar"]),
+        regularizacao=float(meta.get("regularizacao", 0.0)),
+        preparo_versao=meta.get("preparo_versao", ""),
+        corpo_sha256=meta.get("corpo_sha256", ""),
         ajustado_em=meta.get("ajustado_em", ""),
         gerado_por=meta.get("gerado_por", ""), sha256=sha)
