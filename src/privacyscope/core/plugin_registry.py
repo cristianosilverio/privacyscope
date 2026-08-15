@@ -53,6 +53,10 @@ from privacyscope.storage.sqlite_store import SQLiteResultStore
 from privacyscope.tests.banner_cookies import BannerCookiesTest
 from privacyscope.tests.canal_titular import CanalTitularTest
 from privacyscope.tests.politica_privacidade import PoliticaPrivacidadeTest
+from privacyscope.tests.ml_texto import (
+    DireitosTitularExplicadosTest, FinalidadeEspecificadaTest,
+    TransfInternacionalDivulgadaTest,
+)
 
 
 # =============================================================================
@@ -80,6 +84,12 @@ VARIABLE_TESTS: dict[str, Type[VariableTest]] = {
     "banner_cookies": BannerCookiesTest,
     "politica_privacidade": PoliticaPrivacidadeTest,
     "canal_titular": CanalTitularTest,
+    # Variaveis textuais por classificacao supervisionada. Uma implementacao,
+    # tres entradas: o orquestrador resolve nome -> classe e instancia sem
+    # argumentos, de sorte que a identidade da variavel vive na classe.
+    "finalidade_especificada": FinalidadeEspecificadaTest,
+    "direitos_titular_explicados": DireitosTitularExplicadosTest,
+    "transf_internacional_divulgada": TransfInternacionalDivulgadaTest,
 }
 
 OUTPUT_RENDERERS: dict[str, Type[OutputRenderer]] = {}

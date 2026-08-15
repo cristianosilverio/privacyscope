@@ -271,10 +271,163 @@ print(float(p[0]))
               f"gravada {cob.get('mediana'):.3f} < medida dentro do ajuste "
               f"{float(np.median(dentro)):.3f}   (p05 gravado: {cob.get('p05'):.3f})")
 
+# ===========================================================================
+def item_4(rel: Relatorio, verboso: bool) -> None:
+    """Plugins das tres variaveis textuais.
+
+    O que se exige, e por que:
+
+      REGISTRO    As tres variaveis resolvem para classe, e cada uma aponta para o
+                  artefato certo. Registro incompleto so aparece em execucao.
+      CONTRATO    A saida obedece ao formato fixado: valor binario, confianca como
+                  maior probabilidade entre as sinalizadas, e no registro de
+                  auditoria a contagem, o denominador, o limiar, as sentencas, a
+                  identidade do artefato e a cobertura.
+      PREPARO IDENTICO  Sobre material REAL, o plugin produz exatamente os mesmos
+                  segmentos que o corpo de treino registra para aquele sitio. E a
+                  verificacao de que treino e inferencia percorrem o mesmo caminho;
+                  divergencia aqui nao se manifesta como falha, e sim como queda de
+                  desempenho sem causa aparente.
+      IDENTIDADE  Artefato divergente ou de outra variavel interrompe a execucao.
+    """
+    import csv
+    import glob
+    import json
+    import os
+    import tarfile
+    from collections import OrderedDict
+    from datetime import datetime, timezone
+
+    from privacyscope.core.plugin_registry import resolve
+    from privacyscope.core.types import Domain, RawEvidence
+    from privacyscope.models.artefato import ArtefatoCorrompido
+
+    NOMES = {"finalidade_especificada": "finalidade",
+             "direitos_titular_explicados": "direitos_titular",
+             "transf_internacional_divulgada": "transf_internacional"}
+    classes = {}
+    for nome, artefato in NOMES.items():
+        try:
+            c = resolve("variable_tests", nome)
+        except KeyError as e:
+            rel.afere(False, f"[{nome}] registrado", str(e)[:160]); continue
+        classes[nome] = c
+        rel.afere(c.variable_name == nome and c.variavel_artefato == artefato,
+                  f"[{nome}] registrado e apontando para o artefato certo",
+                  f"{c.__name__} v{c.version} -> {c.variavel_artefato}")
+    if len(classes) != 3:
+        return
+
+    modelos = REPO / "models"
+    manifesto = modelos / "MANIFESTO.csv"
+    if not manifesto.exists():
+        rel.afere(False, "artefatos exportados",
+                  "rode antes: python scripts/exportar_modelo_textuais.py")
+        return
+    with manifesto.open(encoding="utf-8", newline="") as fh:
+        reg = {r["variavel"]: r for r in csv.DictReader(fh, delimiter=";")}
+
+    # --- material real: subpaginas de uma politica marcada, SEM documento em PDF,
+    #     de modo que o pacote congelado nao acrescente texto que o tarball nao tem.
+    corpo = REPO / "outputs" / "segmentos_rotulados.csv"
+    csv.field_size_limit(10 ** 7)
+    with corpo.open(encoding="utf-8", newline="") as fh:
+        R = list(csv.DictReader(fh, delimiter=";"))
+    por_sitio: dict[str, list[str]] = {}
+    for r in R:
+        por_sitio.setdefault(r["site_id"], []).append(r["texto"])
+
+    tcc = os.environ.get("PRIVACYSCOPE_TCC")
+    escolhidos = []
+    for sitio in por_sitio:
+        if tcc:
+            pac = Path(tcc) / "Rotulagem" / "evidencia_b9" / f"{sitio}.txt"
+            if pac.exists() and "[POLITICA EM PDF" in pac.read_text(
+                    encoding="utf-8", errors="replace"):
+                continue
+        alvo = glob.glob(str(REPO / "data" / "b9" / "raw" / f"*{sitio}.tar.gz"))
+        if alvo:
+            escolhidos.append((sitio, alvo[0]))
+        if len(escolhidos) == 3:
+            break
+    rel.afere(bool(escolhidos), "material real disponivel para a conferencia",
+              ", ".join(s for s, _ in escolhidos) or
+              "nenhum tarball encontrado em data/b9/raw")
+
+    for sitio, tar in escolhidos:
+        subs, index = OrderedDict(), {}
+        with tarfile.open(tar, "r:gz") as tf:
+            for m in tf.getmembers():
+                n = m.name
+                if n.endswith("/html_subpages/_index.json"):
+                    index = json.load(tf.extractfile(m))
+                elif "/html_subpages/" in n and n.endswith(".html"):
+                    subs[os.path.basename(n)] = tf.extractfile(m).read()
+        paginas = {}
+        for chave in sorted(subs):
+            base = chave[:-5] if chave.endswith(".html") else chave
+            if index.get(base, base) == "/__pre_consent":
+                continue
+            paginas[chave] = subs[chave]
+
+        ev = RawEvidence(domain=Domain(url=f"https://{sitio}", tld=".com.br",
+                                       source_name="verificacao"),
+                         html_pages=paginas, fetcher_name="verificacao",
+                         timestamp_utc=datetime.now(timezone.utc))
+        linha = reg["finalidade"]
+        t = classes["finalidade_especificada"]()
+        res = t.evaluate(ev, {"modelo_file": str(modelos / linha["arquivo"]),
+                              "modelo_sha256": linha["sha256"]},
+                         protocol_version="verificacao", run_id="v1")
+
+        esperado = len(por_sitio[sitio])
+        obtido = res.audit_trail["n_segmentos_avaliados"]
+        rel.afere(obtido == esperado,
+                  f"[{sitio}] preparo do plugin == preparo do treino",
+                  f"{obtido} segmentos, corpo registra {esperado}")
+
+        trilha = res.audit_trail
+        faltam = [c for c in ("n_sentencas_sinalizadas", "n_segmentos_avaliados",
+                              "limiar", "sentencas", "modelo_sha256",
+                              "preparo_versao", "cobertura_vocabulario",
+                              "extrapolacao")
+                  if c not in trilha]
+        rel.afere(not faltam and isinstance(res.value, bool),
+                  f"[{sitio}] contrato de saida completo",
+                  f"valor {res.value}, confianca {res.confidence:.3f}, "
+                  f"{trilha.get('n_sentencas_sinalizadas')} de "
+                  f"{trilha.get('n_segmentos_avaliados')} sinalizadas, "
+                  f"cobertura {trilha.get('cobertura_vocabulario')}"
+                  + (f"   FALTAM: {faltam}" if faltam else ""))
+        rel.afere(trilha.get("modelo_sha256") == linha["sha256"],
+                  f"[{sitio}] identidade do artefato na trilha de auditoria")
+
+    # --- recusas
+    t = classes["finalidade_especificada"]()
+    ev = RawEvidence(domain=Domain(url="https://x.com.br", tld=".com.br",
+                                   source_name="v"),
+                     html_pages={"/p": b"<p>texto qualquer para avaliacao</p>"},
+                     fetcher_name="v", timestamp_utc=datetime.now(timezone.utc))
+    arq = str(modelos / reg["finalidade"]["arquivo"])
+    for descricao, params, excecao in (
+            ("artefato divergente", {"modelo_file": arq, "modelo_sha256": "0" * 64},
+             ArtefatoCorrompido),
+            ("artefato de outra variavel",
+             {"modelo_file": str(modelos / reg["transf_internacional"]["arquivo"]),
+              "modelo_sha256": reg["transf_internacional"]["sha256"]}, ValueError),
+            ("protocolo sem modelo declarado", {}, ValueError)):
+        try:
+            classes["finalidade_especificada"]().evaluate(
+                ev, params, protocol_version="v", run_id="v")
+            rel.afere(False, f"recusa: {descricao}")
+        except excecao:
+            rel.afere(True, f"recusa: {descricao}")
+
 
 ITENS = {
     2: ("Artefato de modelo", "tests_unit/test_artefato.py", item_2),
     3: ("Exportacao dos artefatos textuais", "tests_unit/test_artefato.py", item_3),
+    4: ("Plugins das variaveis textuais", "tests_unit/test_ml_texto.py", item_4),
 }
 
 
