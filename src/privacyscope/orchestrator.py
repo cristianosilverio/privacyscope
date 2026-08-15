@@ -34,7 +34,8 @@ from typing import Any, Iterator
 import yaml
 
 from privacyscope.core.plugin_registry import resolve
-from privacyscope.core.types import NAO_APLICAVEL
+from privacyscope.core.types import NAO_APLICAVEL, NAO_COLETADO
+from privacyscope.fetchers.desafio_antibot import detecta_desafio
 from privacyscope.core.types import Domain, EvidenceRef, RawEvidence
 
 logger = logging.getLogger(__name__)
@@ -177,18 +178,34 @@ class Orchestrator:
             return
 
         sources_cfg = self.protocol.get("sources", [])
+        # Aceita `source:` no singular, forma usada pelos protocolos anteriores a
+        # existencia de mais de uma fonte. Ignorar em silencio uma chave declarada
+        # e pior que ler: o protocolo diria uma coisa e a execucao faria outra.
+        if not sources_cfg and self.protocol.get("source"):
+            sources_cfg = [self.protocol["source"]]
         if not sources_cfg:
             raise ValueError("protocol.yaml deve declarar 'sources' ou 'override_domains'")
         for src_entry in sources_cfg:
             SrcCls = resolve("sources", src_entry["name"])
-            src = SrcCls(**src_entry.get("params", {}))
-            max_n = src_entry.get("params", {}).get("max_n", 50)
+            # Fonte se instancia SEM argumentos e recebe os params na chamada, como
+            # os testes de variavel. A convencao unica importa: params sao dados de
+            # protocolo, e passa-los ao construtor amarraria a assinatura de cada
+            # fonte ao vocabulario do YAML.
+            src = SrcCls()
+            params = dict(src_entry.get("params", {}))
+            # `max_n` e teto de seguranca de quem escreve o protocolo, e nao da
+            # fonte; ausente, nao ha corte. Truncar por padrao produziria conjunto
+            # menor que o declarado sem que nada no registro dissesse isso.
+            max_n = params.pop("max_n", None)
             count = 0
-            for dom in src.iter():
+            for dom in src.list_domains(params):
                 yield dom
                 count += 1
-                if count >= max_n:
+                if max_n is not None and count >= max_n:
+                    logger.info("fonte %s: corte em max_n=%d", src_entry["name"], max_n)
                     break
+            else:
+                logger.info("fonte %s: %d dominios", src_entry["name"], count)
 
     # ------------------------------------------------------------------
     # Modos de operação
@@ -203,6 +220,7 @@ class Orchestrator:
             sample_size=len(domains),
         )
         errors = 0
+        bloqueados = 0
         for domain in domains:
             try:
                 evidence = await self._collect_one(domain)
@@ -211,11 +229,31 @@ class Orchestrator:
                     protocol_version_hash=self.protocol_version_hash,
                 )
                 logger.info("collected %s -> %s", domain.url, Path(ref.path).name)
+                # O bloqueio e por PAGINA, e nao por coleta: nos nove casos achados
+                # em 1.045 coletas, a raiz veio integra e o desafio atingiu subpagina
+                # candidata a politica. Invalidar a coleta inteira descartaria medicao
+                # boa. Quem decide e cada teste, que sabe em que paginas se apoiou.
+                desafio = detecta_desafio(evidence)
+                if desafio:
+                    logger.warning("desafio anti-bot em %d pagina(s) de %s (%s)",
+                                   len(desafio["paginas"]), domain.url,
+                                   ", ".join(desafio["marcas"]))
+                    bloqueados += 1
                 self._analyze_evidence(evidence, run_id)
             except Exception as exc:
                 logger.error("falha em %s: %s", domain.url, exc, exc_info=False)
                 errors += 1
+                self._registra_nao_coletado(
+                    domain.url, run_id, motivo=self._motivo_da_falha(exc),
+                    detalhe={"excecao": type(exc).__name__, "mensagem": str(exc)[:1000]})
+        if bloqueados:
+            logger.warning("%d de %d dominios tiveram ao menos uma pagina "
+                           "bloqueada por desafio anti-bot", bloqueados, len(domains))
         self.store.finish_run(run_id, errors_count=errors)
+        # A sexta camada fecha o ciclo tambem aqui. Rende-se APOS finish_run, de modo
+        # que o artefato de saida reflita a execucao encerrada, e nao um estado
+        # intermediario.
+        self.render_outputs(run_id)
         return run_id
 
     async def collect_only(self) -> str:
@@ -282,6 +320,12 @@ class Orchestrator:
             )
             try:
                 evidence = self.repo.get(ref)
+                # Reanalise honra o mesmo criterio: evidencia de desafio nao vira
+                # veredito so porque desta vez o caminho e outro.
+                desafio = detecta_desafio(evidence)
+                if desafio:
+                    logger.warning("desafio anti-bot em %d pagina(s) de %s",
+                                   len(desafio["paginas"]), entry["domain_url"])
                 self._analyze_evidence(evidence, run_id)
             except Exception as exc:
                 logger.error("falha analyze_only em %s: %s", entry["domain_url"], exc)
@@ -366,10 +410,21 @@ class Orchestrator:
         ``nao_aplicavel`` indevidamente. Vai declarado como limitação.
         """
         anteriores: dict[str, Any] = {}
+        nao_coletadas: set[str] = set()
         for test, params in self.tests:
             faltando = [d for d in (params.get("depende_de") or [])
                         if not anteriores.get(d)]
-            if faltando:
+            # Precondicao que ficou INDETERMINADA nao autoriza dizer `nao_aplicavel`:
+            # `nao_aplicavel` afirma que a variavel nao cabe porque o sitio nao tem
+            # politica, e aqui nao se sabe se tem. O estado se propaga como e.
+            bloqueadas = [d for d in faltando if d in nao_coletadas]
+            if bloqueadas:
+                result = self._resultado_nao_coletado(
+                    test, evidence.domain.url, run_id,
+                    motivo="dependencia_nao_coletada",
+                    detalhe={"depende_de": list(faltando),
+                             "nao_coletadas": bloqueadas})
+            elif faltando:
                 result = self._nao_aplicavel(test, evidence, run_id, faltando,
                                              anteriores)
             else:
@@ -379,7 +434,71 @@ class Orchestrator:
                     run_id=run_id,
                 )
             anteriores[result.variable_name] = result.value is True
+            if result.value == NAO_COLETADO:
+                nao_coletadas.add(result.variable_name)
             self.store.upsert(result)
+
+    @staticmethod
+    def _motivo_da_falha(exc: Exception) -> str:
+        """Classifica a falha de coleta em motivo estavel para o registro.
+
+        Proibicao por robots.txt nao e falha: e estado legitimo e permanente, que o
+        arcabouco deve declarar como tal em lugar de confundi-lo com indisponibilidade
+        temporaria. A distincao muda o que se faz no ciclo seguinte.
+        """
+        nome = type(exc).__name__
+        if nome == "RobotsDisallowedError":
+            return "robots_proibe"
+        if "Navigation" in nome or "Timeout" in nome or "timeout" in str(exc).lower():
+            return "coleta_expirou"
+        if "AmbienteIncompleto" in nome:
+            return "ambiente_incompleto"
+        return "coleta_falhou"
+
+    def _registra_nao_coletado(self, domain_url: str, run_id: str, *, motivo: str,
+                               detalhe: dict[str, Any]) -> None:
+        """Grava `nao_coletado` para TODAS as variaveis declaradas, com o motivo.
+
+        POR QUE A UNIDADE PRECISA APARECER
+        ----------------------------------
+        Ate aqui, dominio que falhava na coleta simplesmente sumia: nao entrava em
+        nenhuma saida, e so existia como linha de log. Some do numerador e do
+        denominador ao mesmo tempo, de sorte que qualquer proporcao calculada sobre o
+        resultado responde a uma pergunta que ninguem fez — a prevalencia entre os
+        sitios que o coletor conseguiu alcancar, e nao entre os sitios da amostra.
+
+        Na coleta ao vivo isso foi 20 de 100. Taxa de alcance e parte do resultado, e
+        nao nota de rodape do log.
+
+        TODAS as variaveis, e nao so a afetada: quando a origem devolve desafio, a
+        contaminacao nao tem direcao unica. A interstitial fixa cookies proprios e
+        pode exibir aviso proprio, e tres dos quatro casos achados em b7 e b9 estavam
+        com `tem_banner_cookies = true`.
+        """
+        for test, params in self.tests:
+            self.store.upsert(self._resultado_nao_coletado(
+                test, domain_url, run_id, motivo=motivo, detalhe=detalhe,
+                sufixo=params.get("variavel_sufixo", "")))
+
+    def _resultado_nao_coletado(self, test, domain_url: str, run_id: str, *,
+                                motivo: str, detalhe: dict[str, Any],
+                                sufixo: str = ""):
+        """Constroi o resultado indeterminado de UMA variavel."""
+        from privacyscope.core.types import VariableResult
+
+        return VariableResult(
+            domain_url=domain_url,
+            variable_name=f"{test.variable_name}{sufixo}",
+            value=NAO_COLETADO,
+            # Confianca zero: nao ha medicao sobre a qual ter confianca. O campo nao e
+            # "certeza de que houve bloqueio", e sim confianca do veredito.
+            confidence=0.0,
+            audit_trail={"motivo": motivo, "coletado": False, **detalhe},
+            protocol_version=self.protocol["metadata"]["protocol_version"],
+            plugin_version=getattr(test, "version", "0"),
+            run_id=run_id,
+            timestamp_utc=datetime.now(timezone.utc),
+        )
 
     def _nao_aplicavel(self, test, evidence: RawEvidence, run_id: str,
                        faltando: list[str], anteriores: dict[str, Any]):
