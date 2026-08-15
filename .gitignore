@@ -100,6 +100,9 @@ outputs/*.joblib
 # pacotes de captura por scripts/segmentar_politicas.py; versiona-se o script, e
 # nao o texto de terceiros.
 outputs/segmentos_*.csv
+# Vetores densos do BERTimbau: ~34 MB, reproduziveis por
+# scripts/extrair_vetores_bertimbau.py a partir do corpo rotulado.
+outputs/vetores_bertimbau.npz
 outputs/*_publica.csv.bak*
 
 # Credenciais
@@ -133,3 +136,8 @@ Thumbs.db
 
 # Scripts temporarios de consulta ad-hoc
 _query.py
+
+# Artefatos de modelo (models/*.npz) SAO versionados: sao pequenos, e sem eles a
+# reexecucao sobre evidencia congelada nao reproduz resultado algum. O formato e
+# recipiente de dados, nunca objeto serializado — ver docs/artefatos-camada-analise.md.
+!models/*.npz

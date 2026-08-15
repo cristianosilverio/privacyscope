@@ -29,9 +29,37 @@ conteúdo capturado — ao menos uma página da amostra traz byte nulo no texto.
 **PDF.** Aproveita-se o texto já extraído no pacote de evidência, cuja obtenção
 combina camada de texto e reconhecimento óptico conforme a disponibilidade.
 
+O pacote é localizado pela pasta do TCC, informada por `--tcc` ou pela variável de
+ambiente `PRIVACYSCOPE_TCC`. **Executar sem essa referência suprime, em silêncio, a
+totalidade do texto publicado em PDF** — inclusive a política inteira dos sítios que só
+publicam nesse formato. Por isso a ausência interrompe a execução, e segmentar sem os
+PDF exige `--sem-pdf` explícito.
+
 **Limpeza.** Removem-se caracteres de controle e colapsam-se sequências de espaço. A
 remoção de caracteres de controle é pré-requisito das etapas seguintes e da gravação
 em formato separado por delimitador, que não os admite.
+
+### Independência da versão do interpretador
+
+O analisador de hipertexto da biblioteca padrão decide por si quais elementos têm
+conteúdo de **texto puro**, e essa decisão variou entre versões do CPython: as
+antigas comprehendem apenas `script` e `style`; as recentes acrescentam `xmp`,
+`iframe`, `noembed` e `noframes`.
+
+A diferença é observável no material coletado. Onde `iframe` é tratado como texto
+puro, sua marcação interna vira segmento — encontrou-se
+`<span class="fr-mk" style="display: none;">&nbsp;</span>` em dois sítios; onde não
+é, a marcação é analisada como marcação e apenas o texto interno comparece.
+
+O extrator **declara o conjunto clássico**, `("script", "style")`, em vez de herdar
+o do interpretador. A escolha é por compatibilidade com o corpo de rotulagem, que
+foi construído e marcado sob esse comportamento, e não por mérito. Descartar todo o
+conteúdo de `iframe` seria um terceiro comportamento, distinto dos dois que os
+interpretadores exibem, e suprimiria texto legítimo.
+
+Sem essa declaração, o mesmo material produz corpos distintos conforme o ambiente,
+e o resumo criptográfico do conjunto de treino deixa de identificar coisa alguma.
+A propriedade é verificada em `tests_unit/test_segmentacao.py`.
 
 ## Etapa 2 — Filtro de idioma, por subpágina
 
@@ -105,25 +133,51 @@ Blocos que resistam à divisão — enumeração sem pontuação, lista de país
 formulário — permanecem extensos. Reparti-los por contagem de caracteres seria corte
 arbitrário no interior de oração.
 
-## Etapa 5 — Remoção de material de navegação
+## Etapa 5 — Deduplicação por sítio
 
 Cabeçalho, rodapé e menu não integram o objeto de análise, mas **não podem ser
 excluídos pela marca semântica** que os envolve: 10,5% das passagens que fundamentam
 os rótulos residem dentro de `header`, `footer`, `nav` ou `aside`, porque parte
 expressiva dos sítios emprega esses elementos de forma incorreta.
 
-Adota-se critério de **repetição**. Material de navegação reaparece em cada subpágina
-do mesmo sítio; material de modelo de plataforma reaparece em sítios distintos. Texto
-que se repete nessa escala não constitui declaração do controlador sobre o tratamento.
+Adota-se **deduplicação**: de cada texto idêntico dentro do mesmo sítio preserva-se
+uma ocorrência, a primeira, e descartam-se as demais. Não há remoção por repetição, e
+**não há parâmetro de corte**.
 
-O corte é o menor valor em que **nenhum documento rotulado perde a totalidade de sua
-evidência**. A formulação ao nível do documento, e não do segmento, decorre de
-observação: o casamento posicional ocasionalmente varre para dentro da passagem um
-título contíguo que se repete em todas as subpáginas, e exigir que nenhum segmento
-positivo seja atingido faria um único sítio elevar o corte de cinco para vinte e uma
-ocorrências.
+### Por que a formulação anterior foi abandonada
 
-**Sob o material coletado, o corte apurado é 5.**
+A versão anterior descartava toda ocorrência de texto que comparecesse cinco vezes ou
+mais no mesmo sítio, ou em cinco sítios distintos. Três medições a inviabilizaram:
+
+1. **O problema é duplicação, não presença.** A mesma frase contada dezenas de vezes
+   distorce a proporção de classes, a ponderação pelo inverso da frequência documental
+   e — sobretudo — as próprias métricas: como as cópias residem no mesmo documento e a
+   partição é por documento, a decisão do modelo sobre uma única sentença comparece
+   várias vezes no conjunto reunido. Preservar uma cópia resolve a duplicação sem
+   suprimir texto algum.
+
+2. **O critério entre sítios removia declaração.** Sete segmentos portadores de
+   evidência foram descartados exclusivamente por ele. Política copiada de modelo
+   continua sendo declaração do controlador que a publicou, e o título "Transferência
+   internacional de dados" sobreviveu apenas por comparecer em quatro sítios, a um
+   passo do corte.
+
+3. **O critério entre sítios acoplava cada sítio à composição da execução.** O mesmo
+   documento produzia conjuntos distintos conforme quem mais estivesse na rodada.
+
+### Consequência declarada
+
+Material de navegação passa a integrar o conjunto, uma vez por sítio. Isso é
+deliberado: a etapa 6 suprime o cromo mais curto, e o que resta é exatamente o que o
+arcabouço encontrará em operação — de modo que o classificador aprende a rejeitá-lo no
+treino, em vez de encontrá-lo pela primeira vez em campo.
+
+### Rótulo da sobrevivente
+
+Quando ocorrências do mesmo texto divergem quanto ao rótulo derivado do casamento
+posicional, a sobrevivente recebe o rótulo **positivo**. A divergência decorre de o
+intervalo da transcrição cobrir uma ocorrência e não as outras; descartar a positiva
+suprimiria evidência por acidente de posição.
 
 ## Etapa 6 — Descarte de fragmento curto
 
@@ -138,21 +192,13 @@ lacunas e impediria a correspondência de trechos que as atravessam.
 
 ## Aplicação a material novo
 
-As etapas 1 a 4 e 6 dependem apenas do documento e se aplicam sem alteração.
+**Todas as etapas dependem apenas do documento e se aplicam sem alteração.**
 
-A **etapa 5 exige atenção**. O critério de repetição no mesmo sítio é computável sobre
-um único documento. O critério de repetição entre sítios distintos exige conjunto de
-referência, indisponível quando se avalia um sítio isolado. Duas condutas são
-admissíveis, e a escolha deve ser declarada:
-
-- aplicar somente o critério intra-sítio, aceitando que material de modelo de
-  plataforma não seja removido; ou
-- conservar o conjunto de treino como referência e confrontar cada segmento novo
-  contra ele.
-
-O **corte de 5 é parâmetro congelado**. Ele foi derivado com as passagens positivas à
-vista, e não pode ser recalculado sobre material não rotulado — não há evidência a
-preservar. Recalculá-lo em produção descaracterizaria o procedimento.
+Essa propriedade não existia na formulação anterior: o critério de repetição entre
+sítios exigia conjunto de referência, indisponível quando se avalia um sítio isolado, e
+obrigava a declarar uma entre duas condutas divergentes. A deduplicação é estritamente
+intra-sítio e é computável sobre um único documento, de sorte que **o preparo do treino
+e o preparo do uso passam a coincidir por construção**, e não por convenção.
 
 ## Parâmetros congelados
 
@@ -163,10 +209,11 @@ preservar. Recalculá-lo em produção descaracterizaria o procedimento.
 | `RAZAO_IDIOMA` | 1,4 | inspeção |
 | `REPET_PAGINA` | 3 | inspeção |
 | `MAX_RECORRENTE` | 150 | inspeção |
-| corte de repetição | 5 | derivado do conjunto rotulado |
 
-Os cinco primeiros foram fixados por inspeção e **não foram validados**; constituem
-limitação declarada. O sexto obedece a regra reproduzível e verificável.
+Os cinco foram fixados por inspeção e **não foram validados**; constituem limitação
+declarada. O corte de repetição, sexto parâmetro da formulação anterior e único
+derivado do conjunto rotulado — e por isso não recalculável em produção —, **deixou de
+existir** com a adoção da deduplicação.
 
 ## Verificações embutidas
 
