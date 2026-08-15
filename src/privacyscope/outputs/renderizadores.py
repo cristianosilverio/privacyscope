@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from privacyscope.core.interfaces import OutputRenderer, ResultStore
-from privacyscope.core.types import NAO_APLICAVEL
+from privacyscope.core.types import NAO_APLICAVEL, NAO_COLETADO
 from privacyscope.outputs._comum import (
     COLUNAS_BASE, DERIVADAS, ESCALARES, coleta, densidade, destino, dominio,
     linha_plana, sentencas, trilha,
@@ -39,12 +39,18 @@ from privacyscope.outputs._comum import (
 
 
 def _estado(valor) -> str:
-    """Tres estados, e nao dois.
+    """Quatro estados, e nao dois.
 
     `nao_aplicavel` nao e ausencia de divulgacao: e ausencia de medicao, porque a
     precondicao da variavel nao se verificou. Reduzi-lo a `false` produziria
     indicador enviesado exatamente na direcao que o trabalho quer medir.
+
+    `nao_coletado` e ainda mais distante de `false`: nao houve sitio a medir, seja
+    porque a coleta falhou, seja porque a origem devolveu desafio anti-bot. O
+    primeiro estado fala do sitio; o segundo, do instrumento.
     """
+    if valor == NAO_COLETADO or valor == "nao_coletado":
+        return NAO_COLETADO
     if valor == NAO_APLICAVEL or valor == "nao_aplicavel":
         return NAO_APLICAVEL
     return "true" if valor in (True, 1, "1", "true") else "false"
@@ -99,6 +105,15 @@ class CsvLargo(OutputRenderer):
                 d[f"{r.variable_name}__densidade"] = densidade(at)
             if at.get("extrapolacao"):
                 d["extrapolacao"] = "true"
+            if at.get("coletado") is False:
+                # Prefere a causa RAIZ. `dependencia_nao_coletada` e consequencia, e
+                # deixa-la sobrescrever o motivo original esconderia por que a coluna
+                # ficou vazia — que e a pergunta que quem le a triagem faz.
+                m = at.get("motivo", "desconhecido")
+                atual = d.get("motivo_nao_coleta", "")
+                if not atual or (atual == "dependencia_nao_coletada"
+                                 and m != "dependencia_nao_coletada"):
+                    d["motivo_nao_coleta"] = m
 
         # A contagem de sinais AUSENTES e o que ordena a triagem: a etapa de
         # Monitoramento prioriza por ausencia de evidencia de transparencia, e
@@ -111,13 +126,20 @@ class CsvLargo(OutputRenderer):
             d["n_sinais_ausentes"] = sum(1 for v in variaveis if d.get(v) == "false")
             d["n_nao_aplicavel"] = sum(1 for v in variaveis
                                        if d.get(v) == NAO_APLICAVEL)
+            # Taxa de alcance e parte do resultado. Sitio nao coletado que sumisse da
+            # saida sairia do numerador e do denominador ao mesmo tempo, e a proporcao
+            # resultante responderia a pergunta errada: prevalencia entre os alcancados,
+            # e nao entre os amostrados.
+            d["n_nao_coletado"] = sum(1 for v in variaveis
+                                      if d.get(v) == NAO_COLETADO)
+            d["motivo_nao_coleta"] = d.get("motivo_nao_coleta", "")
             d["n_variaveis_apuradas"] = sum(1 for v in variaveis
                                             if d.get(v) in ("true", "false"))
 
         com_contagem = sorted({v for d in por_sitio.values() for v in variaveis
                                if f"{v}__n_segmentos" in d})
         campos = (["dominio", "n_sinais_ausentes", "n_variaveis_apuradas",
-                   "n_nao_aplicavel"]
+                   "n_nao_aplicavel", "n_nao_coletado", "motivo_nao_coleta"]
                   + variaveis + [f"{v}__confianca" for v in variaveis]
                   + [c for v in com_contagem
                      for c in (f"{v}__n_sentencas", f"{v}__n_segmentos",
