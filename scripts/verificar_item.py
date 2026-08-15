@@ -152,8 +152,130 @@ def item_2(rel: Relatorio, verboso: bool) -> None:
 
     tmp.cleanup()
 
+# ===========================================================================
+def item_3(rel: Relatorio, verboso: bool) -> None:
+    """Exportacao dos artefatos das tres variaveis textuais.
 
-ITENS = {2: ("Artefato de modelo", "tests_unit/test_artefato.py", item_2)}
+    O que se exige, e por que:
+
+      EXISTENCIA E LEITURA  As tres variaveis tem artefato legivel, e o resumo
+                  gravado no manifesto corresponde ao arquivo em disco. Manifesto
+                  que nao corresponde e pior que manifesto ausente.
+      PROVENIENCIA VIVA  O resumo do corpo gravado no artefato coincide com o do
+                  corpo em disco. Divergencia significa que o artefato foi ajustado
+                  sobre material que nao e mais o vigente.
+      REPRODUCAO  Reajustar com a regularizacao declarada reproduz as mesmas
+                  probabilidades. E o que prova que o artefato saiu do procedimento
+                  que ele diz ter seguido.
+      INDEPENDENCIA  A inferencia funciona com a biblioteca de aprendizado
+                  INDISPONIVEL. E a razao de existir da vetorizacao propria; sem
+                  esta conferencia, a afirmacao seria promessa.
+      COBERTURA HONESTA  A cobertura gravada e a apurada fora do ajuste, mais baixa
+                  que a medida sobre os proprios documentos do vocabulario.
+    """
+    import csv
+    import subprocess
+    import numpy as np
+    from privacyscope.models.artefato import le, resumo_arquivo, resumo_texto
+    from privacyscope.text.segmentacao import VERSAO_PREPARO
+
+    modelos = REPO / "models"
+    manifesto = modelos / "MANIFESTO.csv"
+    if not manifesto.exists():
+        rel.afere(False, "artefatos exportados",
+                  f"manifesto ausente: {manifesto}\n"
+                  f"rode antes: python scripts/exportar_modelo_textuais.py")
+        return
+    with manifesto.open(encoding="utf-8", newline="") as fh:
+        reg = {r["variavel"]: r for r in csv.DictReader(fh, delimiter=";")}
+
+    corpo = REPO / "outputs" / "segmentos_rotulados.csv"
+    csv.field_size_limit(10 ** 7)
+    with corpo.open(encoding="utf-8", newline="") as fh:
+        R = list(csv.DictReader(fh, delimiter=";"))
+    textos = [r["texto"] for r in R]
+    sitios = sorted({r["site_id"] for r in R})
+    idx = {s: i for i, s in enumerate(sitios)}
+    grupos = np.array([idx[r["site_id"]] for r in R])
+    corpo_sha = resumo_texto(textos)
+
+    VARS = ["finalidade", "direitos_titular", "transf_internacional"]
+    rel.afere(set(VARS) <= set(reg), "as tres variaveis constam do manifesto",
+              ", ".join(sorted(reg)))
+    if not set(VARS) <= set(reg):
+        return
+
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+
+    for v in VARS:
+        linha = reg[v]
+        arquivo = modelos / linha["arquivo"]
+        if not arquivo.exists():
+            rel.afere(False, f"[{v}] artefato em disco", str(arquivo))
+            continue
+        sha = resumo_arquivo(arquivo)
+        rel.afere(sha == linha["sha256"], f"[{v}] resumo confere com o manifesto",
+                  f"{sha[:32]}...")
+        a = le(arquivo, linha["sha256"])
+        rel.afere(a.corpo_sha256 == corpo_sha, f"[{v}] proveniencia: corpo vigente",
+                  f"artefato {a.corpo_sha256[:16]}...  disco {corpo_sha[:16]}...")
+        rel.afere(a.preparo_versao == VERSAO_PREPARO,
+                  f"[{v}] proveniencia: versao do preparo",
+                  f"{a.preparo_versao} (biblioteca: {VERSAO_PREPARO})")
+
+        y = np.array([int(r[v]) for r in R])
+        vec = TfidfVectorizer(lowercase=True, stop_words=None, ngram_range=(1, 3),
+                              min_df=3, sublinear_tf=True, norm="l2",
+                              strip_accents=None)
+        X = vec.fit_transform(textos)
+        m = LogisticRegression(C=a.regularizacao, max_iter=3000,
+                               solver="liblinear").fit(X, y)
+        amostra = textos[:800]
+        dif = float(np.abs(a.probabilidades(amostra)
+                           - m.predict_proba(vec.transform(amostra))[:, 1]).max())
+        rel.afere(dif < 1e-10, f"[{v}] reproducao do ajuste declarado",
+                  f"C = {a.regularizacao}, limiar = {a.limiar:.3f}, "
+                  f"maior diferenca {dif:.2e}")
+
+    # Inferencia sem a biblioteca de aprendizado, em processo separado.
+    a0 = le(modelos / reg["finalidade"]["arquivo"], reg["finalidade"]["sha256"])
+    codigo = f"""
+import sys
+for m in list(sys.modules):
+    if m.split('.')[0] == 'sklearn':
+        del sys.modules[m]
+class Barreira:
+    def find_module(self, nome, caminho=None):
+        return self if nome.split('.')[0] == 'sklearn' else None
+    def load_module(self, nome):
+        raise ImportError('sklearn indisponivel por decisao da verificacao')
+sys.meta_path.insert(0, Barreira())
+sys.path.insert(0, r{str(REPO / 'src')!r})
+from privacyscope.models.artefato import le
+a = le(r{str(modelos / reg['finalidade']['arquivo'])!r})
+p = a.probabilidades(["Tratamos os seus dados para a finalidade de entrega."])
+assert 0.0 <= float(p[0]) <= 1.0
+print(float(p[0]))
+"""
+    r = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True)
+    rel.afere(r.returncode == 0,
+              "independencia: inferencia opera sem a biblioteca de aprendizado",
+              (r.stdout.strip() and f"probabilidade obtida: {r.stdout.strip()}")
+              or r.stderr.strip()[-300:])
+
+    cob = a0.cobertura_treino
+    dentro = [a0.cobertura(t) for t in textos[:600]]
+    rel.afere(cob.get("mediana", 1.0) < float(np.median(dentro)),
+              "cobertura gravada e a apurada fora do ajuste",
+              f"gravada {cob.get('mediana'):.3f} < medida dentro do ajuste "
+              f"{float(np.median(dentro)):.3f}   (p05 gravado: {cob.get('p05'):.3f})")
+
+
+ITENS = {
+    2: ("Artefato de modelo", "tests_unit/test_artefato.py", item_2),
+    3: ("Exportacao dos artefatos textuais", "tests_unit/test_artefato.py", item_3),
+}
 
 
 def main() -> int:

@@ -117,6 +117,8 @@ class Artefato:
         coeficientes: peso de cada coluna no escore.
         intercepto: termo constante do escore.
         limiar: probabilidade a partir da qual a sentenca e sinalizada.
+        regularizacao: forca da regularizacao empregada no ajuste. Nao participa da
+            inferencia; e proveniencia, e permite reproduzir o ajuste de origem.
         ngramas: extensao minima e maxima das sequencias de vocabulos.
         minusculas: se o texto e minusculizado antes da tokenizacao.
         sublinear_tf: se a frequencia recebe escalonamento logaritmico.
@@ -135,6 +137,7 @@ class Artefato:
     coeficientes: np.ndarray
     intercepto: float
     limiar: float
+    regularizacao: float = 0.0
     ngramas: tuple[int, int] = (1, 3)
     minusculas: bool = True
     sublinear_tf: bool = True
@@ -217,6 +220,7 @@ class Artefato:
             "preparo_versao": self.preparo_versao,
             "corpo_sha256": self.corpo_sha256,
             "limiar": self.limiar,
+            "regularizacao": self.regularizacao,
             "n_atributos": int(len(self.idf)),
             "ajustado_em": self.ajustado_em,
         }
@@ -240,7 +244,8 @@ def _sigmoide(eta: np.ndarray) -> np.ndarray:
 
 def grava(caminho: Path | str, *, variavel: str, vocabulario: Mapping[str, int],
           idf: Sequence[float], coeficientes: Sequence[float], intercepto: float,
-          limiar: float, ngramas: tuple[int, int] = (1, 3),
+          limiar: float, regularizacao: float = 0.0,
+          ngramas: tuple[int, int] = (1, 3),
           minusculas: bool = True, sublinear_tf: bool = True,
           preparo_versao: str = "", preparo_parametros: Mapping | None = None,
           corpo_sha256: str = "", cobertura_treino: Mapping | None = None,
@@ -273,6 +278,7 @@ def grava(caminho: Path | str, *, variavel: str, vocabulario: Mapping[str, int],
         "variavel": variavel,
         "intercepto": float(intercepto),
         "limiar": float(limiar),
+        "regularizacao": float(regularizacao),
         "ngramas": list(ngramas),
         "minusculas": bool(minusculas),
         "sublinear_tf": bool(sublinear_tf),
@@ -324,6 +330,7 @@ def le(caminho: Path | str, sha256_esperado: str | None = None) -> Artefato:
         vocabulario={t: j for j, t in enumerate(termos)},
         idf=idf, coeficientes=coef,
         intercepto=float(meta["intercepto"]), limiar=float(meta["limiar"]),
+        regularizacao=float(meta.get("regularizacao", 0.0)),
         ngramas=tuple(meta.get("ngramas", (1, 3))),
         minusculas=bool(meta.get("minusculas", True)),
         sublinear_tf=bool(meta.get("sublinear_tf", True)),

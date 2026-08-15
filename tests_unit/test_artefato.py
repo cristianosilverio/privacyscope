@@ -168,3 +168,18 @@ def test_sigmoide_estavel_em_argumento_extremo(artefato):
     p = _sigmoide(np.array([-2000.0, 0.0, 2000.0]))
     assert p[0] == pytest.approx(0.0) and p[2] == pytest.approx(1.0)
     assert p[1] == pytest.approx(0.5)
+
+
+def test_regularizacao_e_proveniencia_e_nao_afeta_a_inferencia(tmp_path):
+    """O valor viaja no artefato para que o ajuste de origem seja reproduzivel,
+    mas nao entra em conta alguma na predicao."""
+    vec, m = _ajusta(TEXTOS, [1, 0, 0, 1, 0])
+    comum = dict(variavel="v", vocabulario={t: int(j) for t, j in vec.vocabulary_.items()},
+                 idf=vec.idf_, coeficientes=m.coef_[0],
+                 intercepto=float(m.intercept_[0]), limiar=0.5)
+    s1 = grava(tmp_path / "a.npz", regularizacao=1.0, **comum)
+    s2 = grava(tmp_path / "b.npz", regularizacao=80.0, **comum)
+    a, b = le(tmp_path / "a.npz", s1), le(tmp_path / "b.npz", s2)
+    assert a.regularizacao == 1.0 and b.regularizacao == 80.0
+    assert np.allclose(a.probabilidades(TEXTOS), b.probabilidades(TEXTOS))
+    assert s1 != s2, "artefatos com proveniencia distinta tem identidades distintas"
