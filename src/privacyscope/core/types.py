@@ -228,6 +228,15 @@ class EvidenceRef(BaseModel):
 # descritivo exatamente na direcao que o trabalho pretende medir.
 NAO_APLICAVEL = "nao_aplicavel"
 
+# Quarto estado, distinto do terceiro. `nao_aplicavel` afirma algo SOBRE O SITIO: a
+# precondicao da variavel nao se verificou, e por isso a medicao nao cabe. Este afirma
+# algo sobre a MEDICAO: o instrumento nao obteve o objeto, seja porque a coleta falhou,
+# seja porque a origem devolveu desafio anti-bot em lugar do sitio.
+#
+# Fundi-los reintroduziria a confusao que ambos existem para desfazer, e com efeito
+# pior: um sitio nunca alcancado apareceria como sitio sem politica.
+NAO_COLETADO = "nao_coletado"
+
 
 class VariableResult(BaseModel):
     """Resultado da aplicação de um VariableTest sobre uma RawEvidence.
