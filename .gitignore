@@ -147,3 +147,22 @@ data/padrao/
 data/teto/
 data/simulacao/
 outputs/_verificacao_*
+
+# ---------------------------------------------------------------------------
+# EXECUCOES AO VIVO E DE EXERCICIO
+# ---------------------------------------------------------------------------
+# O agregado por sitio e o longo por variavel FICAM versionados: somam dezenas de
+# KB e sustentam afirmacoes do texto. A coleta ao vivo nao e reproduzivel por
+# protocolo — repetir a execucao produz outro resultado, como a terceira passagem
+# sobre unimeduberaba.com.br demonstrou.
+#
+# O nivel de sentenca e o JSON de evidencia ficam de fora pelo mesmo motivo de
+# outputs/segmentos_*.csv: reproduzem texto integral de sitios de terceiros e,
+# com ele, contatos de encarregado. Verificado em data/aovivo/: 3 enderecos de
+# correio e ate 7 telefones.
+data/**/evidencias.csv
+data/**/resultados.json
+
+# Transcricoes de terminal: reproduzem URLs e trechos coletados, e crescem sem
+# limite a cada execucao encadeada.
+logs/

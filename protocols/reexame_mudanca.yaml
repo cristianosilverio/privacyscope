@@ -1,0 +1,124 @@
+# =============================================================================
+# REEXAME POR MUDANCA ENTRE EXECUCOES — NAO E AMOSTRA PROBABILISTICA
+#
+# O art. 19 da Resolucao CD/ANPD n. 1/2021 estabelece ciclo anual de monitoramento e
+# o art. 20 exige que o Relatorio de Ciclo avalie o realizado e direcione o seguinte.
+# As duas listas que esse dispositivo demanda sao quem regularizou e quem regrediu, e
+# ambas so existem por comparacao entre duas passagens sobre o mesmo conjunto.
+#
+# A coorte e CENSO DE UMA CONDICAO, e nao sorteio: entram todos os dominios cujo
+# resultado difere entre as duas execucoes concluidas mais recentes do banco de
+# origem. Prevalencia estimada sobre ela seria estimada na propria variavel que a
+# definiu, e nao se reporta.
+#
+# Sem `variavel`, qualquer das seis variaveis conta. So entram dominios apurados nas
+# DUAS execucoes: variavel ausente de um lado e falha de coleta, e trata-la como
+# mudanca confundiria instabilidade do detector com instabilidade da coleta.
+#
+# A leitura desta terceira passagem e sobre ESTABILIDADE, que ate aqui nunca foi
+# medida: os mesmos sitios, os mesmos detectores, coletas em instantes distintos.
+# Divergencia aqui e propriedade do instrumento, e nao do fenomeno.
+#
+# Grava em banco PROPRIO. Escrever de volta em data/aovivo/ acrescentaria uma
+# terceira execucao ao conjunto que serve de origem da comparacao, e a proxima
+# comparacao passaria a confrontar a coorte com o todo.
+#
+# Uso:
+#   privacyscope run protocols/reexame_mudanca.yaml
+# =============================================================================
+metadata:
+  protocol_version: reexame-mudanca-v1.0.0
+  description: Reexame dos dominios cujo resultado difere entre as duas execucoes
+    concluidas mais recentes da coleta ao vivo. Censo de uma condicao; nao e amostra
+    probabilistica.
+sources:
+- name: coorte_reexame
+  params:
+    db_path: data/aovivo/results.sqlite
+    mudanca: true
+    max_n: 100
+repository:
+  name: filesystem
+  params:
+    base_path: data/reexame/
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+    - name: http_simples
+      params:
+        respect_robots_txt: true
+        max_per_category: 2
+        max_total_subpages: 6
+        connect_timeout_s: 8
+        read_timeout_s: 15
+      escalate_if:
+      - signal: cookies_pre_consent_zero
+      - signal: html_root_smaller_than_bytes
+        threshold: 5000
+      - signal: subpage_selection_empty
+      - signal: has_js_shell_markers
+      - exception: JsRequiredError
+      - exception: NavigationFailedError
+      - exception: FetchError
+    - name: playwright
+      params:
+        headless: true
+        phase_screenshots: true
+        revoke_after_consent: false
+        navigation_timeout_ms: 15000
+        scroll_max_iterations: 3
+        max_per_category: 2
+        max_total_subpages: 6
+    max_retries_per_fetcher: 0
+    abort_on:
+    - exception: RobotsDisallowedError
+tests:
+- name: banner_cookies
+  rules_file: config/rules/banner_cookies.yaml
+  params: {}
+- name: politica_privacidade
+  rules_file: config/rules/politica_privacidade.yaml
+  params: {}
+- name: canal_titular_ml
+  params:
+    modelo_file: models/canal-titular-v1.0.0.npz
+    modelo_sha256: df5f83e297a13eeae39b2e1f1dbd5406444f81410152159c587f50b5aaa37401
+- name: finalidade_especificada
+  params:
+    modelo_file: models/textuais-finalidade-v1.0.0.npz
+    modelo_sha256: cf474b9bf6133dc374e0f0720835da6b8e669a67f3008ae4f970a27db96ae0c0
+    depende_de:
+    - tem_politica_privacidade
+- name: direitos_titular_explicados
+  params:
+    modelo_file: models/textuais-direitos_titular-v1.0.0.npz
+    modelo_sha256: a2912290b9911114715a7dd0ea2170bea5e349db39b92b12a6e9c12e84f91a01
+    depende_de:
+    - tem_politica_privacidade
+- name: transf_internacional_divulgada
+  params:
+    modelo_file: models/textuais-transf_internacional-v1.0.0.npz
+    modelo_sha256: ba65b01f76606776b220befc40de2025341f4326ab79e1658bcb3049016c7dff
+    depende_de:
+    - tem_politica_privacidade
+result_store:
+  name: sqlite
+  params:
+    db_path: data/reexame/results.sqlite
+outputs:
+- name: csv
+  params:
+    path: data/reexame/resultados.csv
+- name: csv_largo
+  params:
+    path: data/reexame/resultados_largo.csv
+- name: csv_evidencias
+  params:
+    path: data/reexame/evidencias.csv
+- name: parquet
+  params:
+    path: data/reexame/resultados.parquet
+- name: json
+  params:
+    path: data/reexame/resultados.json
