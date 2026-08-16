@@ -120,9 +120,25 @@ def load_framework_results(sqlite_path: Path, run_id: str) -> dict[str, dict[str
 # ----------------------------------------------------------------------
 # Métricas
 # ----------------------------------------------------------------------
-def confusion_matrix(pairs: list[tuple[bool, bool]]) -> dict[str, int]:
-    """pairs = [(framework_value, human_value), ...]. Retorna {tp,tn,fp,fn,n}."""
+def confusion_matrix(pairs: list[tuple[Any, bool]]) -> dict[str, Any]:
+    """pairs = [(framework_value, human_value), ...]. Retorna {tp,tn,fp,fn,n,...}.
+
+    O ARCABOUCO NAO DEVOLVE SO BOOLEANO
+    -----------------------------------
+    `nao_aplicavel` marca variavel cuja precondicao nao se verificou; `nao_coletado`,
+    unidade que o instrumento nao obteve. Nenhum dos dois cai nos quatro ramos, e a
+    versao anterior os deixava passar em silencio: como `n` era a soma dos quatro,
+    a unidade saia do numerador E do denominador, e nada no relatorio dizia quantas
+    haviam saido. E o mesmo defeito que o registro de unidade nao coletada corrigiu
+    na camada de resultados, uma camada acima.
+
+    Excluir e correto — medida indeterminada nao entra em matriz de confusao —, mas
+    excluir sem contar nao e. A contagem sai declarada em `excluidos`, com o motivo,
+    de sorte que a revocacao possa ser lida sabendo sobre quantas unidades ela foi
+    calculada.
+    """
     tp = tn = fp = fn = 0
+    excluidos: dict[str, int] = {}
     for fw, hu in pairs:
         if fw is True and hu is True:
             tp += 1
@@ -132,7 +148,13 @@ def confusion_matrix(pairs: list[tuple[bool, bool]]) -> dict[str, int]:
             fp += 1
         elif fw is False and hu is True:
             fn += 1
-    return {"tp": tp, "tn": tn, "fp": fp, "fn": fn, "n": tp + tn + fp + fn}
+        else:
+            motivo = fw if isinstance(fw, str) else f"valor_{type(fw).__name__}"
+            excluidos[motivo] = excluidos.get(motivo, 0) + 1
+    n_excluidos = sum(excluidos.values())
+    return {"tp": tp, "tn": tn, "fp": fp, "fn": fn, "n": tp + tn + fp + fn,
+            "excluidos": excluidos, "n_excluidos": n_excluidos,
+            "n_confrontados": tp + tn + fp + fn + n_excluidos}
 
 
 def metrics(cm: dict[str, int]) -> dict[str, float | None]:
@@ -184,8 +206,9 @@ def generate_markdown(
     # --- Resumo por variável ---------------------------------------------
     lines.append("## Resumo por variavel")
     lines.append("")
-    lines.append("| Variavel | n | TP | TN | FP | FN | Acuracia | Precisao | Recall | F1 | Kappa |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Variavel | n | excl. | TP | TN | FP | FN | Acuracia | Precisao | "
+                 "Recall | F1 | Kappa |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     overall_cms = {}
     for var in VARIABLES:
         pairs = []
@@ -201,11 +224,25 @@ def generate_markdown(
         m = metrics(cm)
         overall_cms[var] = (cm, m)
         lines.append(
-            f"| `{var}` | {cm['n']} | {cm['tp']} | {cm['tn']} | {cm['fp']} | {cm['fn']} | "
+            f"| `{var}` | {cm['n']} | {cm['n_excluidos']} | {cm['tp']} | {cm['tn']} | "
+            f"{cm['fp']} | {cm['fn']} | "
             f"{fmt(m['accuracy'])} | {fmt(m['precision'])} | {fmt(m['recall'])} | "
             f"{fmt(m['f1'])} | {fmt(m['kappa'])} |"
         )
     lines.append("")
+    motivos: dict[str, int] = {}
+    for cm, _m in overall_cms.values():
+        for k, v in cm["excluidos"].items():
+            motivos[k] = motivos.get(k, 0) + v
+    if motivos:
+        detalhe = ", ".join(f"`{k}` ({v})" for k, v in sorted(motivos.items()))
+        lines.append(
+            f"**Exclusoes.** {sum(motivos.values())} par(es) ficaram fora da matriz "
+            f"por medida indeterminada: {detalhe}. Medida indeterminada nao entra em "
+            f"matriz de confusao, mas sai do denominador: as metricas acima valem "
+            f"sobre a coluna `n`, e nao sobre a amostra inteira."
+        )
+        lines.append("")
 
     # --- Discordâncias por variável -------------------------------------
     lines.append("## Discordancias detalhadas")
@@ -217,6 +254,9 @@ def generate_markdown(
             fw = framework[dom].get(var)
             gt = ground_truth[dom].get(var)
             if not fw or not gt or gt["value"] is None:
+                continue
+            # Indeterminado nao e discordancia: nao houve medida a discordar.
+            if not isinstance(fw["value"], bool):
                 continue
             if fw["value"] != gt["value"]:
                 disc_rows.append((dom, fw, gt))
