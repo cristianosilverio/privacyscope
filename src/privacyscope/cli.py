@@ -65,15 +65,27 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_analyze(args: argparse.Namespace) -> int:
+    import uuid
+
     from privacyscope.orchestrator import Orchestrator
+
+    # `--nova-execucao` sorteia o identificador; `--destino` aceita um escolhido, o
+    # que serve a quem precisa do mesmo rotulo em dois armazenamentos.
+    destino = args.destino
+    if args.nova_execucao and not destino:
+        destino = str(uuid.uuid4())
 
     orch = Orchestrator(args.protocol)
     try:
-        orch.analyze_only(args.run_id)
+        gravado = orch.analyze_only(args.run_id, destino_run_id=destino)
     finally:
         orch.close()
     print(f"\n=== Análise concluída ===")
-    print(f"run_id:                  {args.run_id}")
+    print(f"evidência de:            {args.run_id}")
+    if gravado != args.run_id:
+        print(f"gravada sob:             {gravado}  (registro anterior preservado)")
+    else:
+        print(f"gravada sob:             {gravado}  (SUBSTITUIU o registro anterior)")
     print(f"protocol_version:        {orch.protocol['metadata']['protocol_version']}")
     print(f"protocol_version_hash:   {orch.protocol_version_hash[:16]}...")
     return 0
@@ -167,6 +179,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_analyze.add_argument("protocol", type=Path, help="Caminho do protocol.yaml.")
     p_analyze.add_argument("--run-id", required=True, help="UUID do run a re-analisar.")
+    # Substituir e o padrao historico e permanece. Preservar exige pedido explicito,
+    # porque quem ajusta uma regra em geral QUER o registro atualizado; quem corrige
+    # veredito ja apurado quer o contrario, e precisa dizer.
+    g_destino = p_analyze.add_mutually_exclusive_group()
+    g_destino.add_argument(
+        "--nova-execucao", action="store_true",
+        help="grava a reanalise sob identificador novo, preservando o registro "
+             "anterior e tornando os dois comparaveis pela fonte de coorte.")
+    g_destino.add_argument(
+        "--destino", metavar="UUID",
+        help="grava a reanalise sob o identificador informado.")
     p_analyze.set_defaults(func=cmd_analyze)
 
     # render

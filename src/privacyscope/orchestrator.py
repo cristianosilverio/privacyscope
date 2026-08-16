@@ -276,19 +276,42 @@ class Orchestrator:
         self.store.finish_run(run_id, errors_count=errors)
         return run_id
 
-    def analyze_only(self, run_id: str) -> None:
-        """Re-aplica VariableTests sobre evidências persistidas do run_id.
+    def analyze_only(self, run_id: str, *, destino_run_id: str | None = None) -> str:
+        """Re-aplica VariableTests sobre evidencias persistidas do run_id.
 
-        Lê o manifest.jsonl do repositório, reconstrói o EvidenceRef de cada
-        entry pertencente ao run_id, recupera a RawEvidence via repo.get(),
-        e aplica os tests declarados no protocol atual. Útil quando se ajusta
-        a regra de algum teste sem querer re-coletar.
+        Le o manifest.jsonl do repositorio, reconstroi o EvidenceRef de cada entrada
+        pertencente ao run_id, recupera a RawEvidence via repo.get() e aplica os
+        testes declarados no protocolo atual. Util quando se ajusta a regra de algum
+        teste sem querer recoletar.
+
+        DESTINO DA REANALISE
+        --------------------
+        Por omissao grava sob o MESMO identificador, substituindo o resultado
+        anterior. E o comportamento correto para quem ajusta uma regra e quer o
+        registro atualizado, e por isso continua sendo o padrao.
+
+        Quando `destino_run_id` e fornecido, a reanalise vira execucao PROPRIA: o
+        registro anterior permanece intacto e os dois passam a ser comparaveis pelos
+        mesmos meios que comparam duas coletas, inclusive pela fonte de coorte com o
+        criterio de mudanca. E o que se quer quando a correcao altera vereditos ja
+        apurados, porque resultado que se altera no lugar nao deixa rastro de que foi
+        alterado, e a diferenca entre o antes e o depois e justamente o que precisa
+        ser mostrado.
+
+        Cada resultado da reanalise leva `reanalise_de` na trilha de auditoria, de
+        sorte que a procedencia acompanhe a linha e nao dependa de nota externa.
 
         Args:
-            run_id: UUID do run anterior cujas evidências serão re-analisadas.
+            run_id: execucao cuja evidencia sera relida.
+            destino_run_id: identificador sob o qual gravar. None substitui.
+
+        Returns:
+            O identificador efetivamente gravado.
 
         Raises:
-            ValueError: se nenhuma entrada do manifest referenciar este run_id.
+            ValueError: se nenhuma entrada do manifest referenciar este run_id, ou
+                se o destino coincidir com execucao ja registrada e distinta da
+                reanalisada.
         """
         manifest_path = self.repo.raw_dir / "manifest.jsonl"
         if not manifest_path.exists():
@@ -309,6 +332,29 @@ class Orchestrator:
         if not entries_for_run:
             raise ValueError(f"nenhuma evidência encontrada para run_id={run_id}")
 
+        destino = destino_run_id or run_id
+        reanalise = destino != run_id
+        if reanalise:
+            # Destino ja usado apagaria o registro de outra execucao — e o motivo de
+            # existir a opcao e exatamente nao apagar registro.
+            if destino in self._execucoes_registradas():
+                raise ValueError(
+                    f"o destino {destino} ja consta do armazenamento; escolha outro "
+                    f"identificador, sob pena de sobrescrever execucao alheia.")
+            self.store.begin_run(
+                destino,
+                protocol_version=self.protocol["metadata"]["protocol_version"],
+                sample_size=len(entries_for_run),
+            )
+            logger.info("reanalise de %s gravada sob %s (%d evidencias)",
+                        run_id[:8], destino[:8], len(entries_for_run))
+        else:
+            logger.warning("reanalise SUBSTITUI os resultados de %s; use "
+                           "destino_run_id para preservar o registro anterior",
+                           run_id[:8])
+
+        auditoria = {"reanalise_de": run_id} if reanalise else None
+        erros = 0
         for entry in entries_for_run:
             tar_path = self.repo.raw_dir / entry["tar_filename"]
             ref = EvidenceRef(
@@ -326,11 +372,22 @@ class Orchestrator:
                 if desafio:
                     logger.warning("desafio anti-bot em %d pagina(s) de %s",
                                    len(desafio["paginas"]), entry["domain_url"])
-                self._analyze_evidence(evidence, run_id)
+                self._analyze_evidence(evidence, destino, auditoria_extra=auditoria)
             except Exception as exc:
                 logger.error("falha analyze_only em %s: %s", entry["domain_url"], exc)
+                erros += 1
+                # A unidade que falha na RELEITURA some pelo mesmo mecanismo que a
+                # que falha na coleta, e o remedio e o mesmo.
+                self._registra_nao_coletado(
+                    entry["domain_url"], destino, motivo="reanalise_falhou",
+                    detalhe={"excecao": type(exc).__name__,
+                             "mensagem": str(exc)[:1000],
+                             **(auditoria or {})})
 
-        self.render_outputs(run_id)
+        if reanalise:
+            self.store.finish_run(destino, errors_count=erros)
+        self.render_outputs(destino)
+        return destino
 
     # ------------------------------------------------------------------
     # Saída — a sexta camada
@@ -382,7 +439,15 @@ class Orchestrator:
         """Invoca o fetcher (chain) para um domínio."""
         return await self.fetcher.fetch(domain, self.fetcher_params)
 
-    def _analyze_evidence(self, evidence: RawEvidence, run_id: str) -> None:
+    def _execucoes_registradas(self) -> set[str]:
+        """Identificadores ja presentes no armazenamento."""
+        try:
+            return {r.run_id for r in self.store.query({})}
+        except Exception:                                          # noqa: BLE001
+            return set()
+
+    def _analyze_evidence(self, evidence: RawEvidence, run_id: str,
+                          auditoria_extra: dict[str, Any] | None = None) -> None:
         """Aplica os VariableTests à evidência, respeitando dependências declaradas.
 
         DEPENDÊNCIA ENTRE VARIÁVEIS
@@ -433,6 +498,11 @@ class Orchestrator:
                     protocol_version=self.protocol["metadata"]["protocol_version"],
                     run_id=run_id,
                 )
+            if auditoria_extra:
+                # A procedencia acompanha a LINHA. Nota externa se perde; trilha de
+                # auditoria viaja com o resultado por todas as saidas.
+                result = result.model_copy(
+                    update={"audit_trail": {**result.audit_trail, **auditoria_extra}})
             anteriores[result.variable_name] = result.value is True
             if result.value == NAO_COLETADO:
                 nao_coletadas.add(result.variable_name)

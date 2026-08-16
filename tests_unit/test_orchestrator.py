@@ -102,3 +102,89 @@ def test_robots_proibe_e_motivo_proprio():
     from privacyscope.fetchers._exceptions import RobotsDisallowedError
     assert Orchestrator._motivo_da_falha(RobotsDisallowedError("x")) == "robots_proibe"
     assert Orchestrator._motivo_da_falha(RuntimeError("x")) == "coleta_falhou"
+
+
+# ---------------------------------------------------------------------------
+# Destino da reanalise
+# ---------------------------------------------------------------------------
+def _repo_com_uma_evidencia(tmp_path, run_id="antiga"):
+    """Monta repositorio e armazenamento minimos com uma evidencia coletada."""
+    import asyncio
+    from datetime import datetime, timezone
+    from privacyscope.core.plugin_registry import resolve
+    from privacyscope.core.types import Domain, RawEvidence
+    from privacyscope.orchestrator import Orchestrator
+
+    repo = resolve("repositories", "filesystem")(base_path=str(tmp_path))
+    ev = RawEvidence(
+        domain=Domain(url="https://x.br", tld=".br", source_name="t"),
+        html_pages={"/": b"<html><body>portal</body></html>"},
+        cookies_by_phase={}, headers={}, screenshot=None, phase_screenshots={},
+        network_log=[], subpage_selection={}, consent_actions=[],
+        fetcher_name="http_simples", timestamp_utc=datetime.now(timezone.utc),
+        errors=[])
+    repo.put(ev, run_id, protocol_version_hash="h")
+
+    loja = resolve("result_stores", "sqlite")(db_path=str(tmp_path / "r.sqlite"))
+    loja.begin_run(run_id, protocol_version="t", sample_size=1)
+    loja.finish_run(run_id, errors_count=0)
+
+    o = Orchestrator.__new__(Orchestrator)
+    o.protocol = {"metadata": {"protocol_version": "t"}}
+    o.protocol_version_hash = "h"
+    o.repo, o.store = repo, loja
+    o.tests = [(resolve("variable_tests", "politica_privacidade")(), {})]
+    o.renderers = []
+    return o, loja
+
+
+def test_reanalise_sob_novo_identificador_preserva_o_registro(tmp_path):
+    """Resultado que se altera no lugar nao deixa rastro de que foi alterado, e a
+    diferenca entre o antes e o depois e o que precisa ser mostrado."""
+    from datetime import datetime, timezone
+    from privacyscope.core.types import VariableResult
+
+    o, loja = _repo_com_uma_evidencia(tmp_path)
+    try:
+        # Veredito antigo, que a correcao mudaria: precisa sobreviver intacto.
+        loja.upsert(VariableResult(
+            domain_url="https://x.br", variable_name="tem_politica_privacidade",
+            value=True, confidence=0.9, audit_trail={"source": "regra_anterior"},
+            protocol_version="t", plugin_version="0", run_id="antiga",
+            timestamp_utc=datetime.now(timezone.utc)))
+
+        assert o.analyze_only("antiga", destino_run_id="nova") == "nova"
+
+        antigos = list(loja.query({"run_id": "antiga"}))
+        assert len(antigos) == 1
+        assert antigos[0].value is True
+        assert antigos[0].audit_trail["source"] == "regra_anterior"
+
+        novos = list(loja.query({"run_id": "nova"}))
+        assert novos and all(r.audit_trail.get("reanalise_de") == "antiga"
+                             for r in novos)
+        assert novos[0].value is False          # a evidencia minima nao tem politica
+    finally:
+        loja.close()
+
+
+def test_reanalise_sem_destino_substitui(tmp_path):
+    o, loja = _repo_com_uma_evidencia(tmp_path)
+    try:
+        assert o.analyze_only("antiga") == "antiga"
+        assert all("reanalise_de" not in r.audit_trail
+                   for r in loja.query({"run_id": "antiga"}))
+    finally:
+        loja.close()
+
+
+def test_destino_ja_usado_interrompe(tmp_path):
+    """O motivo de existir a opcao e nao apagar registro."""
+    import pytest
+    o, loja = _repo_com_uma_evidencia(tmp_path)
+    try:
+        o.analyze_only("antiga", destino_run_id="nova")
+        with pytest.raises(ValueError, match="ja consta"):
+            o.analyze_only("antiga", destino_run_id="nova")
+    finally:
+        loja.close()
