@@ -1,0 +1,7 @@
+domain_url;variable_name;value;confidence;run_id;protocol_version;plugin_version;computed_at;n_sentencas_sinalizadas;n_segmentos_avaliados;limiar;cobertura_vocabulario;extrapolacao;motivo;modelo_sha256;preparo_versao;extrator_versao;corpo_sha256;densidade_sinalizacao
+https://futebolpaulista.com.br;tem_banner_cookies;true;0.65;99a54e0b-737a-4e23-a039-cf48aadbb93e;reexame-b9-mudanca-v1.0.0;0.3.1;2026-08-16T14:13:05.473207+00:00;;;;;;;;;;;
+https://futebolpaulista.com.br;tem_politica_privacidade;nao_coletado;0.0;99a54e0b-737a-4e23-a039-cf48aadbb93e;reexame-b9-mudanca-v1.0.0;0.2.1;2026-08-16T14:13:05.490556+00:00;;;;;;desafio_anti_bot;;;;;
+https://futebolpaulista.com.br;tem_canal_titular;false;0.95;99a54e0b-737a-4e23-a039-cf48aadbb93e;reexame-b9-mudanca-v1.0.0;0.2.2;2026-08-16T14:13:05.533717+00:00;;;;;;;;;;;
+https://invictusmanipulacao.com.br;tem_banner_cookies;false;0.95;99a54e0b-737a-4e23-a039-cf48aadbb93e;reexame-b9-mudanca-v1.0.0;0.3.1;2026-08-16T14:13:21.682266+00:00;;;;;;;;;;;
+https://invictusmanipulacao.com.br;tem_politica_privacidade;true;0.95;99a54e0b-737a-4e23-a039-cf48aadbb93e;reexame-b9-mudanca-v1.0.0;0.2.1;2026-08-16T14:13:21.730008+00:00;;;;;;;;;;;
+https://invictusmanipulacao.com.br;tem_canal_titular;false;0.95;99a54e0b-737a-4e23-a039-cf48aadbb93e;reexame-b9-mudanca-v1.0.0;0.2.2;2026-08-16T14:13:21.852514+00:00;;;;;;;;;;;
