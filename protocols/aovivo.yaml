@@ -1,0 +1,202 @@
+# =============================================================================
+# VALIDACAO TECNICA DO CAMINHO DE COLETA — NAO E AMOSTRA DO TRABALHO
+#
+# 100 dominios .br sorteados da lista Tranco N2KLW (top 200,000),
+# semente 20260812. Reproduzivel por:
+#   python scripts/amostrar_ao_vivo.py --list-id N2KLW --n 100 --semente 20260812
+#
+# O quadro amostral e OUTRO: os protocolos do trabalho usam as listas 43Z8X e
+# 74NJX. Misturar as observacoes produziria conjunto com tres quadros e nenhum
+# desenho declarado. Esta coleta demonstra que o arcabouco executa de ponta a
+# ponta com as variaveis supervisionadas, e nada alem disso.
+# =============================================================================
+metadata:
+  protocol_version: aovivo-N2KLW-v1.1.0
+  description: 'Validacao tecnica do caminho de coleta: 100 dominios .br da lista
+    Tranco N2KLW, semente 20260812. NAO integra a amostra do trabalho.'
+override_domains:
+- https://drogariasaopaulo.com.br
+- https://radios.com.br
+- https://portal6.com.br
+- https://meliuz.com.br
+- https://comprasparaguai.com.br
+- https://simepar.br
+- https://sgisistemas.com.br
+- https://gazetadopovo.com.br
+- https://voxus.com.br
+- https://omie.com.br
+- https://utmify.com.br
+- https://cebraspe.org.br
+- https://b3.com.br
+- https://pmweb.com.br
+- https://noticiasagricolas.com.br
+- https://uespi.br
+- https://qualityautomacao.com.br
+- https://ev.org.br
+- https://noataque.com.br
+- https://unoesc.edu.br
+- https://spcbrasil.com.br
+- https://comprasnet.gov.br
+- https://autentique.com.br
+- https://hospedameusite.com.br
+- https://netflu.com.br
+- https://pechinchou.com.br
+- https://bancobmg.com.br
+- https://grupofleury.com.br
+- https://jucemg.mg.gov.br
+- https://telegrupos.com.br
+- https://somostodosum.com.br
+- https://saboresajinomoto.com.br
+- https://acessorh.com.br
+- https://ia.br
+- https://dlkmodas.com.br
+- https://ufersa.edu.br
+- https://boomsistemas.com.br
+- https://unimeduberaba.com.br
+- https://mgapp.mg.gov.br
+- https://detran.es.gov.br
+- https://policia-civil.sp.gov.br
+- https://wurthdobrasil.com.br
+- https://inweb.com.br
+- https://nipotech.com.br
+- https://atmameditacao.com.br
+- https://jsevenprovedor.com.br
+- https://kroton.com.br
+- https://casadosdados.com.br
+- https://redacao.pr.gov.br
+- https://yamaha-motor.com.br
+- https://unipampa.edu.br
+- https://pebmed.com.br
+- https://rihappy.com.br
+- https://cidadania.gov.br
+- https://me.com.br
+- https://encurtador.com.br
+- https://lomadee.com.br
+- https://netdeal.com.br
+- https://crazy-time-brazil.com.br
+- https://anp.gov.br
+- https://fazaboa.com.br
+- https://abnt.org.br
+- https://bitcom.psi.br
+- https://cifras.com.br
+- https://fulltrack.net.br
+- https://algar.com.br
+- https://pdpj.jus.br
+- https://bs2.com.br
+- https://stealthelook.com.br
+- https://eneldistribuicao.com.br
+- https://online.net.br
+- https://novajus.com.br
+- https://bompracredito.com.br
+- https://euamomomi.com.br
+- https://infraero.gov.br
+- https://cora.com.br
+- https://skypecas.com.br
+- https://moviecom.com.br
+- https://letras.com.br
+- https://brinox.com.br
+- https://pmt.pi.gov.br
+- https://valueserver.net.br
+- https://uems.br
+- https://fia.com.br
+- https://rd.com.br
+- https://meucurriculoperfeito.com.br
+- https://prospin.com.br
+- https://ecuro.com.br
+- https://linkcorreios.com.br
+- https://singulare.com.br
+- https://upp.com.br
+- https://diariodoestadogo.com.br
+- https://primelinelatam.com.br
+- https://tjap.jus.br
+- https://gooroocredito.com.br
+- https://lumeway.com.br
+- https://liberdadenews.com.br
+- https://invictus.com.br
+- https://franca.sp.gov.br
+- https://peer-1.com.br
+repository:
+  name: filesystem
+  params:
+    base_path: data/aovivo/
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+    - name: http_simples
+      params:
+        respect_robots_txt: true
+        max_per_category: 2
+        max_total_subpages: 6
+        connect_timeout_s: 8
+        read_timeout_s: 15
+      escalate_if:
+      - signal: cookies_pre_consent_zero
+      - signal: html_root_smaller_than_bytes
+        threshold: 5000
+      - signal: subpage_selection_empty
+      - signal: has_js_shell_markers
+      - exception: JsRequiredError
+      - exception: NavigationFailedError
+      - exception: FetchError
+    - name: playwright
+      params:
+        headless: true
+        phase_screenshots: true
+        revoke_after_consent: false
+        navigation_timeout_ms: 15000
+        scroll_max_iterations: 3
+        max_per_category: 2
+        max_total_subpages: 6
+    max_retries_per_fetcher: 0
+    abort_on:
+    - exception: RobotsDisallowedError
+tests:
+- name: banner_cookies
+  rules_file: config/rules/banner_cookies.yaml
+  params: {}
+- name: politica_privacidade
+  rules_file: config/rules/politica_privacidade.yaml
+  params: {}
+- name: canal_titular_ml
+  params:
+    modelo_file: models/canal-titular-v1.0.0.npz
+    modelo_sha256: df5f83e297a13eeae39b2e1f1dbd5406444f81410152159c587f50b5aaa37401
+- name: finalidade_especificada
+  params:
+    modelo_file: models/textuais-finalidade-v1.0.0.npz
+    modelo_sha256: cf474b9bf6133dc374e0f0720835da6b8e669a67f3008ae4f970a27db96ae0c0
+    depende_de:
+    - tem_politica_privacidade
+- name: direitos_titular_explicados
+  params:
+    modelo_file: models/textuais-direitos_titular-v1.0.0.npz
+    modelo_sha256: a2912290b9911114715a7dd0ea2170bea5e349db39b92b12a6e9c12e84f91a01
+    depende_de:
+    - tem_politica_privacidade
+- name: transf_internacional_divulgada
+  params:
+    modelo_file: models/textuais-transf_internacional-v1.0.0.npz
+    modelo_sha256: ba65b01f76606776b220befc40de2025341f4326ab79e1658bcb3049016c7dff
+    depende_de:
+    - tem_politica_privacidade
+result_store:
+  name: sqlite
+  params:
+    db_path: data/aovivo/results.sqlite
+outputs:
+- name: csv
+  params:
+    path: data/aovivo/resultados.csv
+- name: csv_triagem
+  params:
+    path: data/aovivo/resultados_triagem.csv
+- name: csv_evidencias
+  params:
+    path: data/aovivo/evidencias.csv
+- name: parquet
+  params:
+    path: data/aovivo/resultados.parquet
+- name: json
+  params:
+    path: data/aovivo/resultados.json
