@@ -24,11 +24,10 @@
 metadata:
   protocol_version: analista-v1.0.0
   description: 'Simulacao de uso: reanalise das evidencias ja coletadas em b9'
-source:
-  name: tranco
-  params:
-    tld_filter: .br
-    limit: 384
+# SEM `sources`: este protocolo se usa com `privacyscope analyze`, que le a
+# evidencia do manifesto do repositorio e nunca resolve a camada de ingestao. O
+# bloco de fonte que aqui existia jamais executou, e um protocolo que declara o que
+# nao usa induz a erro quem o le.
 repository:
   name: filesystem
   params:

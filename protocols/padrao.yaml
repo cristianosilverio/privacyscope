@@ -23,11 +23,26 @@
 metadata:
   protocol_version: padrao-v1.0.0
   description: 'Protocolo padrao: 2 variaveis por regra, 4 por classificacao supervisionada'
-source:
-  name: tranco
+sources:
+# A fonte por ranque nao amostra: devolve os dominios do recorte na ordem do
+# ranque, e `max_n` corta os primeiros. Isso DEMONSTRA a camada de ingestao, e nao
+# constitui desenho amostral — tomar os 384 .br mais populares e truncamento por
+# popularidade, nao sorteio.
+#
+# O quadro amostral do trabalho e outro e vive congelado em `override_domains` de
+# b4, b7 e b9, produzido pelos programas de amostragem, que registram semente e
+# criterios. Amostragem e decisao de desenho, e nao leitura de arquivo; embuti-la
+# num plugin de entrada esconderia a decisao de quem le o protocolo.
+#
+# Para executar sobre lista propria, troque por:
+#     - name: csv
+#       params: {path: minha_lista.csv, sha256: <resumo>}
+- name: tranco
   params:
-    tld_filter: .br
-    limit: 384
+    list_id: 74NJX          # lista imutavel de 2026-06-23; ver protocols/b9.yaml
+    top_n: 1000000
+    tld_filters: ['.br']
+    max_n: 384
 repository:
   name: filesystem
   params:

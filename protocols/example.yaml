@@ -22,7 +22,13 @@ metadata:
 sources:
   - name: tranco
     params:
-      tld_filter: ".br"
+      # `list_id` e obrigatorio e imutavel: a Tranco publica uma lista por
+      # identificador, e fixa-lo e o que torna a entrada reproduzivel. Os nomes
+      # abaixo sao os que a fonte exige — `tld_filter` e `limit`, que este exemplo
+      # trazia, ela nao conhece, e o protocolo quebrava na execucao.
+      list_id: "74NJX"
+      top_n: 1000000
+      tld_filters: [".br"]
       max_n: 5
 
 # Para o smoke C3, override declarativo com sites baseline (sobrescreve sources):
