@@ -33,6 +33,7 @@ Fundamentacao:
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, ClassVar
 from urllib.parse import urlparse
@@ -48,6 +49,8 @@ from privacyscope.tests._helpers import (
     safe_decode,
 )
 from privacyscope.tests._lexicon import POLICY_PLAUSIBILITY_KEYWORDS
+
+logger = logging.getLogger(__name__)
 
 
 # ---- DEFAULTS (fallback) — fonte editavel: config/rules/politica_privacidade.yaml ----
@@ -167,6 +170,64 @@ class PoliticaPrivacidadeTest(VariableTest):
                         best_priority = 1
             # body ausente e nao-PDF: NAO conta.
 
+        # DOCUMENTO EM PDF COLHIDO PELO ENRIQUECIMENTO
+        # --------------------------------------------
+        # O laco acima percorre `subpage_selection`, que reune os links que o coletor
+        # escolheu a partir da raiz. O ramo de PDF ali dentro so alcanca o documento
+        # que a PROPRIA raiz linka. Quando a politica esta em segundo nivel, ou em
+        # rede de distribuicao de outro hospedeiro, quem a encontra e o enriquecimento
+        # por PDF — e o resultado dele vive em `evidence.pdf_documents`, campo que
+        # este teste nao lia.
+        #
+        # O efeito era o pior possivel: o documento no pacote de evidencia, integro e
+        # com o nome escrito por extenso, e o veredito `false` com confianca alta. Em
+        # cebraspe.org.br as candidatas eram paginas de "politicas publicas", casamento
+        # lexico infeliz, e a politica de verdade estava no PDF.
+        #
+        # A qualificacao reaproveita o MESMO lexico e o MESMO corte do caminho em
+        # hipertexto. Nenhum criterio proprio de PDF e arbitrado, e a discriminacao foi
+        # medida: o PDF de "Termos e Condicoes de Uso" de mevo.com.br pontua 2, abaixo
+        # do corte de 3, ao passo que as tres politicas de fato pontuam 14, 15 e 16.
+        if not value and (evidence.pdf_documents or {}):
+            from privacyscope.fetchers._pdf import extract_pdf_text
+
+            # Reconhecimento optico DESLIGADO por omissao: este detector roda sobre
+            # todo sitio da amostra, inclusive os sem politica, e e o caminho quente.
+            # Quem precisar do documento digitalizado declara `ocr_pdf: true`.
+            permitir_ocr = bool(params.get("ocr_pdf", False))
+            pdf_por_url: str | None = None
+            for url_pdf, dados in (evidence.pdf_documents or {}).items():
+                if not dados:
+                    continue
+                try:
+                    texto_pdf, metodo = extract_pdf_text(dados, permitir_ocr=permitir_ocr)
+                except Exception as exc:                       # noqa: BLE001
+                    logger.warning("falha ao extrair %s: %s", url_pdf, exc)
+                    continue
+                hits = [kw for kw in keywords if kw in texto_pdf.lower()]
+                if len(hits) >= kw_high:
+                    value = True
+                    confidence_label = CONFIDENCE_HIGH
+                    source = "pdf_enriquecido+content_qualified"
+                    matched_url = url_pdf
+                    matched_pattern = None
+                    matched_against = f"pdf:{metodo}"
+                    subpage_size = len(texto_pdf)
+                    keyword_hits = hits[:10]
+                    best_priority = 3
+                    break
+                # Digitalizacao sem camada de texto: guarda o candidato para o degrau
+                # por URL, que e o mesmo ja aplicado ao PDF linkado pela raiz.
+                if not texto_pdf and pdf_por_url is None and _policy_like(url_pdf, None):
+                    pdf_por_url = url_pdf
+            if not value and pdf_por_url:
+                value = True
+                confidence_label = CONFIDENCE_MEDIUM
+                source = "pdf_enriquecido+policy_like_url"
+                matched_url = pdf_por_url
+                matched_against = "pdf:sem_camada_de_texto"
+                best_priority = 2
+
         # DESAFIO ANTI-BOT NA CANDIDATA
         # -----------------------------
         # Nao encontrar politica entre candidatas que o servidor recusou entregar nao
@@ -194,6 +255,7 @@ class PoliticaPrivacidadeTest(VariableTest):
                     "confidence_label": CONFIDENCE_UNKNOWN,
                     "paginas_recusadas": recusadas,
                     "candidates_count": len(candidates),
+            "pdf_documents_count": len(evidence.pdf_documents or {}),
                     "fetcher_used": evidence.fetcher_name,
                 },
                 protocol_version=protocol_version,
@@ -221,6 +283,7 @@ class PoliticaPrivacidadeTest(VariableTest):
             "subpage_keyword_hits": keyword_hits,
             "subpage_keyword_count": len(keyword_hits),
             "candidates_count": len(candidates),
+            "pdf_documents_count": len(evidence.pdf_documents or {}),
             "min_policy_size_bytes": min_size,
             "min_keywords_for_high": kw_high,
             "fetcher_used": evidence.fetcher_name,

@@ -55,9 +55,18 @@ def _resolve_lang(lang):
     return "+".join(want) or "eng"
 
 
-def extract_pdf_text(data, *, lang="por", min_text_chars=200, ocr_dpi=200, max_pages=40):
+def extract_pdf_text(data, *, lang="por", min_text_chars=200, ocr_dpi=200, max_pages=40,
+                     permitir_ocr=True):
     """Extrai texto de ``data`` (bytes de PDF). Retorna (texto, metodo) com
-    metodo em {'text_layer','ocr','empty'}. Nunca levanta."""
+    metodo em {'text_layer','ocr','empty'}. Nunca levanta.
+
+    `permitir_ocr` existe porque nem todo chamador pode pagar reconhecimento optico.
+    O detector de politica roda sobre TODO sitio da amostra, inclusive os que nao tem
+    politica alguma; as variaveis textuais rodam so onde ha politica. Impor a mesma
+    conta ao caminho quente encareceria a execucao de massa por um ganho que so
+    aparece em documento digitalizado. Padrao verdadeiro para nao alterar o
+    comportamento de quem ja chamava.
+    """
     if not _HAVE_FITZ:
         return "", "empty"
     try:
@@ -75,7 +84,7 @@ def extract_pdf_text(data, *, lang="por", min_text_chars=200, ocr_dpi=200, max_p
     text = "\n".join(parts).strip()
     if len(text) >= min_text_chars:
         return text, "text_layer"
-    if not _HAVE_OCR:
+    if not _HAVE_OCR or not permitir_ocr:
         return (text, "text_layer") if text else ("", "empty")
     langs = _resolve_lang(lang)
     ocr_parts = []
