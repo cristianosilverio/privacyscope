@@ -56,6 +56,47 @@ def _estado(valor) -> str:
     return "true" if valor in (True, 1, "1", "true") else "false"
 
 
+def _prioridade(d: dict) -> tuple:
+    """Chave de ordenacao da triagem por NAO CONFORMIDADE.
+
+    POR QUE NAO E A SOMA DOS SINAIS AUSENTES
+    ----------------------------------------
+    Ordenar pela contagem de `false` parece obvio e produz o oposto do pretendido. A
+    dependencia declarada entre variaveis faz com que o sitio SEM politica tenha as
+    tres variaveis textuais em `nao_aplicavel`, fora da contagem: o pior caso fica
+    com teto de 3, ao passo que o sitio COM politica alcanca 4. Medido na coleta ao
+    vivo de 15/08/2026: seis sitios com politica ficaram acima dos trinta e um sem
+    politica, e um sitio sem banner, sem politica e sem canal do titular apareceu em
+    setimo lugar.
+
+    Contar `nao_aplicavel` como ausencia corrigiria a ordem e reintroduziria o vies
+    que o ternario existe para remover, confundindo "nao divulgou" com "nao foi
+    medido".
+
+    O QUE ORDENA, ENTAO
+    -------------------
+    Ordem lexicografica ancorada no GRAFO DE DEPENDENCIAS declarado no protocolo,
+    que e fato estrutural e nao juizo de gravidade:
+
+    1. sitios com alguma variavel NAO COLETADA vao para o fim. Perfil incompleto nao
+       se compara com perfil completo, e recoleta e outra fila que nao a de
+       fiscalizacao. A coluna `motivo_nao_coleta` os identifica.
+    2. numero de variaveis que ficaram SEM MEDICAO por precondicao nao satisfeita.
+       Nao porque ausencia de politica seja mais grave, e sim porque ela IMPEDE a
+       medicao de outras tres — consequencia declarada, e nao opiniao.
+    3. numero de sinais medidos e ausentes.
+    4. dominio, para que a ordem seja estavel entre execucoes.
+
+    Nenhum peso por gravidade e arbitrado. Sustentar que banner vale mais ou menos
+    que politica exigiria fonte que o trabalho nao tem, e seria a mesma arbitrariedade
+    ja recusada na fixacao de limiar.
+    """
+    return (d.get("n_nao_coletado", 0) > 0,
+            -d.get("n_nao_aplicavel", 0),
+            -d.get("n_sinais_ausentes", 0),
+            d.get("dominio", ""))
+
+
 class CsvLongo(OutputRenderer):
     """Uma linha por sitio e variavel."""
 
@@ -138,15 +179,17 @@ class CsvLargo(OutputRenderer):
 
         com_contagem = sorted({v for d in por_sitio.values() for v in variaveis
                                if f"{v}__n_segmentos" in d})
-        campos = (["dominio", "n_sinais_ausentes", "n_variaveis_apuradas",
-                   "n_nao_aplicavel", "n_nao_coletado", "motivo_nao_coleta"]
+        campos = (["ordem_triagem", "dominio", "n_sinais_ausentes",
+                   "n_variaveis_apuradas", "n_nao_aplicavel", "n_nao_coletado",
+                   "motivo_nao_coleta"]
                   + variaveis + [f"{v}__confianca" for v in variaveis]
                   + [c for v in com_contagem
                      for c in (f"{v}__n_sentencas", f"{v}__n_segmentos",
                                f"{v}__densidade")]
                   + ["extrapolacao", "domain_url", "run_id", "protocol_version"])
-        linhas = sorted(por_sitio.values(),
-                        key=lambda d: (-d["n_sinais_ausentes"], d["dominio"]))
+        linhas = sorted(por_sitio.values(), key=_prioridade)
+        for i, d in enumerate(linhas, 1):
+            d["ordem_triagem"] = i
         with alvo.open("w", encoding="utf-8", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=campos, delimiter=";", restval="")
             w.writeheader()
