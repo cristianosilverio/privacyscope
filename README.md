@@ -45,16 +45,39 @@ Cada execução gera:
 
 ## Variáveis técnicas (v1.0.0)
 
-| Variável | Tipo | Detecção |
+| Variável | Detecção | Depende de |
 |---|---|---|
-| `tem_banner_cookies` | binária | seletor CSS + léxico |
-| `tem_politica_privacidade` | binária | regex no DOM e em hrefs |
-| `tem_canal_titular` | binária | regex DPO/encarregado |
-| `cookies_set` | composta | Playwright headless, fases pré/pós-consent, inventário estruturado |
-| `categoria_cookies` | categórica | regras + classificador supervisionado |
-| `menciona_lgpd` | binária | TF-IDF + Regressão Logística |
+| `tem_banner_cookies` | regra: seletor CSS + léxico | — |
+| `tem_politica_privacidade` | regra: padrões no DOM e em hrefs | — |
+| `tem_canal_titular` | regressão logística penalizada sobre oito atributos estruturais | — |
+| `finalidade_especificada` | TF-IDF + regressão logística, no nível da sentença | `tem_politica_privacidade` |
+| `direitos_titular_explicados` | TF-IDF + regressão logística, no nível da sentença | `tem_politica_privacidade` |
+| `transf_internacional_divulgada` | TF-IDF + regressão logística, no nível da sentença | `tem_politica_privacidade` |
 
-Detalhamento em `config/protocol.yaml` e `docs/arquitetura.md`.
+O canal do titular tem também um detector por regra (`canal_titular`), mantido como linha de base. Registrados e não habilitados por padrão, três classificadores por representação densa servem de **teto comparativo**: custam horas por execução e exigem pesos que não acompanham o repositório.
+
+`cookies_set` e `categoria_cookies` foram movidas para trabalho futuro. `menciona_lgpd` não integra a bateria.
+
+Detalhamento em `protocols/padrao.yaml` e `docs/arquitetura.md`.
+
+## Estados de uma medição
+
+O resultado de uma variável **não é booleano**. Reduzi-lo a verdadeiro/falso enviesa o indicador exatamente na direção que a etapa de Monitoramento quer medir. São quatro estados:
+
+| estado | significa | fala sobre |
+|---|---|---|
+| `true` | o sinal foi medido e está presente | o sítio |
+| `false` | o sinal foi medido e está ausente | o sítio |
+| `nao_aplicavel` | a precondição declarada não se verificou | o sítio |
+| `nao_coletado` | o instrumento não obteve o objeto da medição | o instrumento |
+
+**`nao_aplicavel`** decorre da dependência declarada no protocolo. Finalidade, direitos do titular e transferência internacional são declarações *dentro* da política de privacidade; aplicá-las a um sítio sem política submeteria a um classificador de políticas um material que não é política. O resultado disso não é ausência de divulgação — é medição indevida. Sobre 506 sítios, 46% não tinham política detectada, e neles a variável de finalidade ainda saía positiva em 21,8% dos casos.
+
+**`nao_coletado`** cobre a unidade que falhou na coleta e a página que o servidor de origem recusou entregar. Antes de existir, o domínio que falhava simplesmente sumia das saídas — saía do numerador e do denominador ao mesmo tempo, e qualquer proporção passava a medir prevalência entre os alcançados, e não entre os amostrados. Taxa de alcance é parte do resultado.
+
+Os dois estados são distintos de propósito: fundi-los faria um sítio nunca alcançado aparecer como sítio sem política.
+
+Na saída de triagem, a ordenação por não conformidade é lexicográfica e ancorada no grafo de dependências, e não na soma de sinais ausentes — somar `false` faria o sítio *sem* política ficar abaixo do sítio *com* política que falha nas textuais, porque a dependência tira três variáveis da contagem do primeiro. Nenhum peso por gravidade é arbitrado.
 
 ## Cadeia de custódia
 

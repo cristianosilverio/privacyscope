@@ -58,7 +58,19 @@ class SampleSource(ABC):
     @abstractmethod
     def list_domains(self, params: dict) -> Iterator[Domain]: ...
 ```
-Implementações iniciais: `TrancoSource` (única ativa no protocolo v1.0.0) e `CsvSource` (auxiliar, para listas curadas). `GovBrSource` e outros plugins permanecem como exemplo de extensibilidade — o framework permite registrá-los sem alteração do orquestrador.
+Três implementações registradas:
+
+| plugin | o que devolve | quando usar |
+|---|---|---|
+| `TrancoSource` | domínios de uma lista Tranco, na ordem do ranque | quadro de popularidade; a lista é imutável por identificador |
+| `CsvSource` | a lista de quem executa, na ordem do arquivo | recorte setorial, conjunto de órgãos, processo já instaurado |
+| `CoorteReexameSource` | domínios selecionados por resultado de execução anterior | ciclo de monitoramento (art. 19 da Resolução CD/ANPD nº 1/2021) |
+
+**Nenhuma delas amostra.** A fonte lê e devolve; amostragem é decisão de desenho, e vive nos programas de `scripts/`, que registram semente e critérios. Embuti-la num plugin de entrada esconderia a decisão de quem lê o protocolo. Por isso `max_n`, quando declarado, é teto de segurança de quem escreve o protocolo, e não desenho amostral: tomar os *n* primeiros de um ranque é truncamento por popularidade.
+
+`CsvSource` aceita `sha256` da lista e **interrompe** na divergência, em vez de executar sobre quadro que não é o declarado.
+
+`CoorteReexameSource` é **censo de uma condição**, e não sorteio: devolve todos os domínios que a satisfazem. Estimar prevalência sobre ela seria estimar na própria variável que a definiu. Critérios: `valor` (inclusive os estados indeterminados), `extrapolacao`, `sem_resultado` e `mudanca` — este último compara as duas execuções **concluídas** mais recentes, e é o que materializa o ciclo do art. 20, cujas duas listas de interesse são quem regularizou e quem regrediu.
 
 ### 4.2. PageFetcher (Coleta)
 ```python
@@ -94,11 +106,38 @@ class VariableTest(ABC):
     def evaluate(self, ev: RawEvidence, params: dict) -> VariableResult: ...
 ```
 Cada `VariableResult` carrega:
-- `value`: valor da variável (bool, categoria, numérico)
+- `value`: um dos **quatro estados** descritos em 4.4.1
 - `confidence`: float ∈ [0,1]
 - `audit_trail`: dict com (a) regra/seletor/modelo acionado, (b) snippet evidencial, (c) versão do plugin, (d) versão do protocolo, (e) timestamp
 
-Implementações iniciais: `StructuralTest`, `LexiconTest`, `MLClassifierTest`, `CookieAnalyzer`.
+Implementações registradas. Por regra determinística: `BannerCookiesTest`, `PoliticaPrivacidadeTest`, `CanalTitularTest`. Por classificação supervisionada: `CanalTitularMLTest` (regressão logística penalizada sobre oito atributos estruturais) e `FinalidadeEspecificadaTest`, `DireitosTitularExplicadosTest`, `TransfInternacionalDivulgadaTest` (TF-IDF + regressão logística, no nível da sentença). Registrados e **não habilitados** por padrão, como teto comparativo por representação densa: `FinalidadeDensaTest`, `DireitosDensaTest`, `TransfDensaTest`.
+
+O canal do titular tem dois regimes registrados, e ambos produzem a mesma variável — declarar os dois na mesma execução exige `variavel_sufixo`, sob pena de a camada de resultados sobrescrever um com o outro. O orquestrador recusa a duplicidade antes de tocar o disco.
+
+#### 4.4.1. Os quatro estados de `value`
+
+Reduzir a medição a verdadeiro/falso enviesa o indicador exatamente na direção que a etapa de Monitoramento quer medir. Daí quatro estados, e não dois:
+
+| estado | significa | fala sobre |
+|---|---|---|
+| `true` | o sinal foi medido e está presente | o sítio |
+| `false` | o sinal foi medido e está ausente | o sítio |
+| `nao_aplicavel` | a precondição declarada não se verificou, e a medição não cabe | o sítio |
+| `nao_coletado` | o instrumento não obteve o objeto da medição | o instrumento |
+
+`nao_aplicavel` nasce da **dependência declarada** entre variáveis (`depende_de` no protocolo). Finalidade, direitos do titular e transferência internacional são declarações *dentro* da política de privacidade; aplicá-las a um sítio sem política é submeter a um classificador de políticas um material que não é política, e o resultado não é ausência de divulgação, é medição indevida. Medido sobre 506 sítios: 46% não têm política detectada, e neles a variável de finalidade ainda saía positiva em 21,8% dos casos, respondendo por 16% de todos os positivos.
+
+`nao_coletado` cobre dois casos: a unidade que falhou na coleta — que antes desaparecia das saídas, saindo do numerador e do denominador ao mesmo tempo — e a página que o servidor de origem recusou entregar. Ver 4.4.2.
+
+Fundir os dois estados reintroduziria a confusão que ambos existem para desfazer, e com efeito pior: um sítio nunca alcançado apareceria como sítio sem política.
+
+#### 4.4.2. Desafio anti-bot
+
+Quando a origem classifica o coletor como robô, ela não devolve o sítio: devolve uma página de desafio. O detector, que não tem como saber o que está lendo, conclui que não há política — com rótulo de confiança **alto**, porque a regra de fato não encontrou nada.
+
+`fetchers/desafio_antibot.py` lê os cabeçalhos guardados na evidência e só admite marca que signifique desafio, e não presença do produto: `server: cloudflare` e `x-datadome-cid` ficam de fora porque acompanham resposta servida normalmente. Falso positivo aqui descartaria coleta válida, e seletivamente por tecnologia.
+
+O bloqueio é **por página**, e não por coleta. Varredura das 1.045 coletas do repositório (`scripts/verificar_desafio_antibot.py`): 12 atingidas, todas com a raiz íntegra, e em 10 delas o desafio caiu sobre candidata a política. Nessas, o veredito passa a ser `nao_coletado`; nas outras duas, em que a página atingida não era candidata, o veredito negativo é legítimo e permanece. A verificação vem **depois** da busca, de sorte que candidata legível que qualifique a política vença o bloqueio de outra.
 
 ### 4.5. ResultStore (Persistência estruturada)
 ```python
@@ -108,8 +147,10 @@ class ResultStore(ABC):
     @abstractmethod
     def query(self, filt: dict) -> Iterable[VariableResult]: ...
 ```
-Implementação: `SQLiteStore` com schema *long-format*:
-`(domain_id, variable_name, value, confidence, audit_trail_json, run_id, protocol_version, ts)`.
+Implementação: `SQLiteResultStore` com schema *long-format*:
+`(domain_url, variable_name, value, confidence, audit_trail_json, run_id, protocol_version, plugin_version, computed_at)`.
+
+A gravação é por substituição na chave natural `(protocolo, execução, variável, domínio)`. Reanálise sobre evidência preservada pode gravar sob a **mesma** execução, substituindo o registro, ou sob execução **própria** (`analyze --nova-execucao`), preservando o anterior e levando `reanalise_de` na trilha de auditoria. A segunda forma existe porque resultado que se altera no lugar não deixa rastro de que foi alterado, e a diferença entre o antes e o depois é o que precisa ser mostrado quando uma correção altera veredito já apurado — inclusive pela própria `CoorteReexameSource`, com o critério `mudanca`.
 
 ### 4.6. OutputRenderer (Saída)
 ```python
@@ -117,7 +158,21 @@ class OutputRenderer(ABC):
     @abstractmethod
     def render(self, store: ResultStore, params: dict) -> Path: ...
 ```
-Implementações iniciais: `CsvExport`, `ParquetExport`, `MarkdownReport`, `DashboardJsonExport`.
+Cinco implementações registradas, porque quem tabula, quem prioriza, quem verifica e quem reprocessa querem recortes distintos do mesmo conjunto:
+
+| plugin | formato | para quem |
+|---|---|---|
+| `csv` (`CsvLongo`) | uma linha por sítio e variável | tabulação e análise estatística |
+| `csv_largo` (`CsvLargo`) | uma linha por sítio, uma coluna por variável | **triagem** |
+| `csv_evidencias` (`CsvEvidencias`) | uma linha por sentença sinalizada | verificação humana do que o classificador viu |
+| `parquet` (`ParquetLongo`) | longo, com tipagem declarada | reprocessamento |
+| `json` (`JsonEvidencia`) | aninhado, com trilha de auditoria integral | integração e reexecução |
+
+**Ordenação da triagem.** O `csv_largo` ordena por não conformidade, e não pela soma de sinais ausentes. Ordenar pela soma produz o oposto do pretendido: a dependência entre variáveis faz o sítio *sem* política ter as três textuais em `nao_aplicavel`, fora da contagem, de sorte que o pior caso fica com teto de 3 enquanto o sítio *com* política alcança 4. Medido na coleta de 15/08/2026: seis sítios com política ficaram acima dos trinta e um sem política, e um sítio sem banner, sem política e sem canal do titular apareceu em sétimo lugar.
+
+Contar `nao_aplicavel` como ausência corrigiria a ordem e reintroduziria o viés que o ternário existe para remover. A ordenação é lexicográfica e ancorada no **grafo de dependências declarado**, que é fato estrutural e não juízo de gravidade: (1) sítios com alguma variável não coletada vão para o fim, porque perfil incompleto não se compara com perfil completo e recoleta é outra fila que não a de fiscalização; (2) número de variáveis sem medição por precondição não satisfeita — não porque ausência de política seja mais grave, mas porque ela *impede* a medição de outras três; (3) número de sinais medidos e ausentes; (4) domínio, para estabilidade entre execuções. A posição resultante vai na coluna `ordem_triagem`, e as componentes ficam visíveis para que a ordem seja auditável.
+
+Nenhum peso por gravidade é arbitrado. Sustentar que banner vale mais ou menos que política exigiria fonte que o trabalho não tem, e seria a mesma arbitrariedade já recusada na fixação de limiar. Fica declarado como limitação que `tem_banner_cookies` não é exigência legal direta, e somá-lo aos demais já supõe comensurabilidade.
 
 ---
 
@@ -228,7 +283,7 @@ Resultado: qualquer adulteração posterior (do tar, do manifest ou do log) é d
 | Variáveis com regras formais e auditáveis | `VariableTest` + `audit_trail` em `VariableResult` |
 | Webscraping/crawling estruturado | Camada 2 + FallbackChain |
 | Análise textual/estrutural + ML quando pertinente | Camada 4 (testes independentes por tipo) |
-| Consolidação tabular | `SQLiteStore` long-format |
+| Consolidação tabular | `SQLiteResultStore` long-format |
 | Consistência, reprodutibilidade, robustez | Camada 3 imutável + hashes + `protocol_version` |
 | Aderência conceitual à Resolução CD/ANPD nº 1/2021 | Discutida no texto do TCC (não codificada) |
 | Flexibilidade (novos critérios) | Plugin novo + uma linha no YAML |
@@ -244,10 +299,12 @@ PrivacyScope/
 ├── LICENSE                  # MIT (ver decisão pendente)
 ├── config/
 │   ├── protocol.yaml
-│   ├── thresholds.yaml
-│   └── rules/
+│   └── rules/               # regras dos detectores determinísticos
 │       ├── banner_cookies.yaml
 │       └── ...
+├── protocols/               # protocolos de execução, um por recorte
+├── scripts/                 # amostragem, exportação de artefatos, verificadores
+├── models/                  # artefatos .npz + metadados (versionados)
 ├── src/privacyscope/
 │   ├── core/                # ABCs + tipos (Domain, RawEvidence, VariableResult)
 │   ├── sources/             # plugins de Ingestão
