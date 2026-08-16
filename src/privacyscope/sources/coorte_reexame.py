@@ -58,7 +58,8 @@ from pathlib import Path
 from typing import Any, ClassVar, Iterator
 
 from privacyscope.core.interfaces import SampleSource
-from privacyscope.core.types import NAO_APLICAVEL, Domain
+from privacyscope.core.types import (
+    ESTADOS_INDETERMINADOS, NAO_APLICAVEL, Domain)
 from privacyscope.sources.csv_lista import normaliza_host, sufixo
 
 logger = logging.getLogger(__name__)
@@ -205,9 +206,12 @@ class CoorteReexameSource(SampleSource):
 
         alvo = params.get("valor")
         if alvo is None:
+            # A mensagem enumera os estados a partir do modulo de tipos, e nao de
+            # uma lista escrita a mao: o quarto estado nasceu depois desta mensagem,
+            # e ela continuou anunciando tres por meses.
+            estados = ", ".join(["true", "false"] + [repr(e) for e in ESTADOS_INDETERMINADOS])
             raise CoorteInvalidaError(
-                "o criterio `valor` exige params['valor']: true, false ou "
-                f"{NAO_APLICAVEL!r}.")
+                f"o criterio `valor` exige params['valor']: {estados}.")
         return [normaliza_host(r.domain_url) for r in da_variavel
                 if _igual(r.value, alvo)]
 

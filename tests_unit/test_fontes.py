@@ -225,3 +225,26 @@ def test_execucao_em_curso_nao_define_coorte(tmp_path):
     with pytest.raises(CoorteInvalidaError, match="CONCLUIDA"):
         list(CoorteReexameSource().list_domains(
             {"db_path": str(tmp_path / "e.sqlite"), "variavel": "v", "valor": True}))
+
+
+def test_mensagem_do_criterio_valor_enumera_todos_os_estados(tmp_path):
+    """A lista escrita a mao anunciou tres estados por meses depois de o quarto
+    existir. Ler do modulo de tipos impede que dessincronize de novo."""
+    from privacyscope.core.types import ESTADOS_INDETERMINADOS
+
+    b = _banco(tmp_path, [("a.br", "v", True, None)])
+    with pytest.raises(CoorteInvalidaError) as exc:
+        list(CoorteReexameSource().list_domains({"db_path": str(b), "variavel": "v"}))
+    for estado in ESTADOS_INDETERMINADOS:
+        assert estado in str(exc.value)
+
+
+def test_criterio_valor_seleciona_por_estado_indeterminado(tmp_path):
+    """O criterio ja aceitava; era so a mensagem que mentia."""
+    from privacyscope.core.types import NAO_COLETADO
+
+    b = _banco(tmp_path, [("bloqueado.br", "v", NAO_COLETADO, None),
+                          ("medido.br", "v", False, None)])
+    d = list(CoorteReexameSource().list_domains(
+        {"db_path": str(b), "variavel": "v", "valor": NAO_COLETADO}))
+    assert [x.url for x in d] == ["https://bloqueado.br"]

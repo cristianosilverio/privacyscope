@@ -237,6 +237,12 @@ NAO_APLICAVEL = "nao_aplicavel"
 # pior: um sitio nunca alcancado apareceria como sitio sem politica.
 NAO_COLETADO = "nao_coletado"
 
+# Os estados que NAO sao medicao. Existe como tupla para que quem precise enumera-los
+# — mensagem de erro, renderizador, verificador — leia daqui em vez de manter copia
+# propria: a lista escrita a mao em `coorte_reexame` anunciou tres estados por meses
+# depois de o quarto existir.
+ESTADOS_INDETERMINADOS = (NAO_APLICAVEL, NAO_COLETADO)
+
 
 class VariableResult(BaseModel):
     """Resultado da aplicação de um VariableTest sobre uma RawEvidence.
