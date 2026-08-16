@@ -151,26 +151,27 @@ O item 6 acrescenta um plugin e preserva o existente. Os resultados reportam os
 dois regimes para a mesma variável, e o arcabouço tem de poder executar ambos,
 sob declaração no protocolo.
 
-## 6. Pendências de protocolo
+## 6. Pendências de protocolo — resolvidas
 
-`config/protocol.yaml` declara seis testes, três dos quais **não estão
-registrados**: `cookies_set`, `categoria_cookies` e `menciona_lgpd`. A execução
-do protocolo padrão interrompe com erro de resolução de plugin.
+Esta seção registrava três pendências. Todas foram fechadas; ficam aqui com o
+desfecho, porque a decisão importa mais que a pendência.
 
-`menciona_lgpd` não integra a bateria de variáveis técnicas do trabalho e aponta
-para dados de treino inexistentes: é resíduo de desenho anterior e sai.
+**Variáveis declaradas sem plugin registrado.** `config/protocol.yaml` declarava
+`cookies_set`, `categoria_cookies` e `menciona_lgpd`, nenhuma delas registrada, e
+a execução interrompia com erro de resolução. `menciona_lgpd` era resíduo de
+desenho anterior e saiu. `cookies_set` e `categoria_cookies` foram para **trabalho
+futuro** (decidido em 11/08/2026): não integram a bateria de seis variáveis
+técnicas nem figuram nos resultados, e são extensões que a arquitetura comporta
+pelo mesmo mecanismo de plugin, sem refatoração das camadas. O protocolo em vigor
+é `protocols/padrao.yaml`, que declara as seis variáveis efetivamente registradas.
 
-`cookies_set` e `categoria_cookies` **vão para trabalho futuro** (decidido em
-11/08/2026). Não integram a bateria de seis variáveis técnicas do protocolo nem
-figuram nos resultados; mantê-los declarados sem implementação faz o protocolo
-padrão interromper com erro de resolução de plugin. Saem da declaração e ficam
-registrados aqui como extensão prevista: inventário de cookies por fase de consentimento
-e classificação de cookies por categoria são variáveis que a arquitetura comporta
-pelo mesmo mecanismo de plugin, sem refatoração das camadas.
+`config/protocol.yaml` permanece no repositório, marcado no cabeçalho como esquema
+obsoleto e não executável — registro da migração, e não configuração ativa.
+`scripts/verificar_item.py` afere a presença desse aviso.
 
-A remoção efetiva ocorre no item 8, junto com a declaração das variáveis
-supervisionadas.
-
-O docstring de `VariableTest` anuncia implementações iniciais que incluem
-`MLClassifierTest`, classe que nunca foi escrita. A nomenclatura se resolve com
-os itens 4, 6 e 7, e o docstring se atualiza junto.
+**Nomenclatura anunciada e nunca escrita.** O docstring de `VariableTest` e a
+seção 4.4 de `docs/arquitetura.md` anunciavam `StructuralTest`, `LexiconTest`,
+`MLClassifierTest` e `CookieAnalyzer`, nenhuma das quatro existente. Os nomes
+foram substituídos pelas classes registradas, e um teste
+(`tests_unit/test_protocolos.py`) passou a recusar que o documento cite classe
+ausente do registro — de sorte que a divergência não se reinstale em silêncio.

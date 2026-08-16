@@ -120,3 +120,30 @@ def test_readme_lista_as_variaveis_do_protocolo_padrao():
     for t in padrao["tests"]:
         nome = resolve("variable_tests", t["name"]).variable_name
         assert f"`{nome}`" in doc, f"variavel `{nome}` do protocolo padrao ausente do README"
+
+
+def test_readme_so_anuncia_subcomandos_que_existem():
+    """O README mandava rodar `privacyscope run --config ...`; a flag nao existe e
+    o arquivo apontado esta marcado como esquema obsoleto. E o primeiro comando
+    que alguem digita."""
+    import re
+
+    from privacyscope.cli import build_parser
+
+    doc = (REPO / "README.md").read_text(encoding="utf-8")
+    sub = [a for a in build_parser()._subparsers._group_actions[0].choices]
+    citados = set(re.findall(r"privacyscope ([a-z-]+)", doc))
+    assert citados, "o README deixou de mostrar qualquer comando"
+    assert citados <= set(sub), f"README cita subcomando inexistente: {citados - set(sub)}"
+    assert "--config" not in doc, "o caminho do protocolo e posicional"
+
+
+def test_readme_nao_afirma_manifesto_assinado():
+    """Assinatura implica nao repudio por chave; o que existe e encadeamento por
+    hash. Num trabalho que cita a ISO/IEC 27037, a palavra e cobravel."""
+    import re
+
+    doc = (REPO / "README.md").read_text(encoding="utf-8")
+    for frase in re.findall(r"[^.]*assinad[^.]*\.", doc):
+        assert "não assinado" in frase or "nao assinado" in frase, (
+            f"afirmacao de assinatura sem lastro no codigo: {frase.strip()!r}")

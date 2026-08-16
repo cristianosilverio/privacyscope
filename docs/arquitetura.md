@@ -163,12 +163,12 @@ Cinco implementações registradas, porque quem tabula, quem prioriza, quem veri
 | plugin | formato | para quem |
 |---|---|---|
 | `csv` (`CsvLongo`) | uma linha por sítio e variável | tabulação e análise estatística |
-| `csv_largo` (`CsvLargo`) | uma linha por sítio, uma coluna por variável | **triagem** |
+| `csv_triagem` (`CsvTriagem`) | uma linha por sítio, uma coluna por variável | **triagem** |
 | `csv_evidencias` (`CsvEvidencias`) | uma linha por sentença sinalizada | verificação humana do que o classificador viu |
 | `parquet` (`ParquetLongo`) | longo, com tipagem declarada | reprocessamento |
 | `json` (`JsonEvidencia`) | aninhado, com trilha de auditoria integral | integração e reexecução |
 
-**Ordenação da triagem.** O `csv_largo` ordena por não conformidade, e não pela soma de sinais ausentes. Ordenar pela soma produz o oposto do pretendido: a dependência entre variáveis faz o sítio *sem* política ter as três textuais em `nao_aplicavel`, fora da contagem, de sorte que o pior caso fica com teto de 3 enquanto o sítio *com* política alcança 4. Medido na coleta de 15/08/2026: seis sítios com política ficaram acima dos trinta e um sem política, e um sítio sem banner, sem política e sem canal do titular apareceu em sétimo lugar.
+**Ordenação da triagem.** O `csv_triagem` ordena por não conformidade, e não pela soma de sinais ausentes. Ordenar pela soma produz o oposto do pretendido: a dependência entre variáveis faz o sítio *sem* política ter as três textuais em `nao_aplicavel`, fora da contagem, de sorte que o pior caso fica com teto de 3 enquanto o sítio *com* política alcança 4. Medido na coleta de 15/08/2026: seis sítios com política ficaram acima dos trinta e um sem política, e um sítio sem banner, sem política e sem canal do titular apareceu em sétimo lugar.
 
 Contar `nao_aplicavel` como ausência corrigiria a ordem e reintroduziria o viés que o ternário existe para remover. A ordenação é lexicográfica e ancorada no **grafo de dependências declarado**, que é fato estrutural e não juízo de gravidade: (1) sítios com alguma variável não coletada vão para o fim, porque perfil incompleto não se compara com perfil completo e recoleta é outra fila que não a de fiscalização; (2) número de variáveis sem medição por precondição não satisfeita — não porque ausência de política seja mais grave, mas porque ela *impede* a medição de outras três; (3) número de sinais medidos e ausentes; (4) domínio, para estabilidade entre execuções. A posição resultante vai na coluna `ordem_triagem`, e as componentes ficam visíveis para que a ordem seja auditável.
 

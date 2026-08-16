@@ -31,17 +31,22 @@ pip install -e ".[dev]"
 playwright install chromium
 ```
 
-## Uso (preview)
+## Uso
 
 ```bash
-privacyscope run --config config/protocol.yaml
+privacyscope run       protocols/padrao.yaml            # coleta + análise + saídas
+privacyscope analyze   protocols/padrao.yaml --run-id <uuid> [--nova-execucao]
+privacyscope render    protocols/padrao.yaml            # regera saídas, sem recoletar
+privacyscope list-plugins
 ```
 
-Cada execução gera:
-- Pacotes de evidência bruta em `data/raw/` (`<dominio>__<run_id>__<ts>.tar.gz` + SHA-256 no manifest)
-- Resultados estruturados em `data/results/results.sqlite` e `data/results/results.parquet`
-- Relatório em Markdown em `data/results/report.md`
-- Log de auditoria em `data/results/audit_log.jsonl`
+Toda execução é governada por um protocolo em `protocols/`, e é ele que declara para onde vai cada artefato. Com `protocols/padrao.yaml`:
+
+- **Evidência bruta** em `data/padrao/raw/` — um `<dominio>__<run_id>__<ts>.tar.gz` por sítio, com SHA-256 no `manifest.jsonl` e o hash do manifesto encadeado em `audit_log.jsonl`
+- **Resultados estruturados** em `data/padrao/results.sqlite`, formato longo
+- **Saídas** em `data/padrao/`, uma por renderizador declarado: `resultados.csv` (longo), `resultados_triagem.csv` (largo, ordenado por não conformidade), `evidencias.csv` (por sentença sinalizada), `resultados.parquet`, `resultados.json`
+
+`config/protocol.yaml` é de um esquema anterior e **não executa** — permanece no repositório apenas como registro da migração, e o próprio cabeçalho o declara obsoleto.
 
 ## Variáveis técnicas (v1.0.0)
 
@@ -81,7 +86,9 @@ Na saída de triagem, a ordenação por não conformidade é lexicográfica e an
 
 ## Cadeia de custódia
 
-Cada conjunto de evidências (HTML, cookies, headers, screenshot, metadados) é empacotado em `tar.gz`, recebe hash SHA-256, e é registrado em `manifest.jsonl` assinado. O hash do manifest é gravado em `audit_log.jsonl`. Qualquer adulteração é detectável pela recomputação em cascata. Referência: ABNT NBR ISO/IEC 27037:2013; Casey (2011).
+Cada conjunto de evidências (HTML, cookies, headers, screenshot, metadados) é empacotado em `tar.gz`, recebe hash SHA-256 e é registrado em `manifest.jsonl`. A cada escrita, o hash do próprio manifesto é gravado em `audit_log.jsonl` — o manifesto é **encadeado por hash**, e não assinado. `privacyscope verify-manifest` recomputa a cascata e reporta divergência.
+
+A distinção importa. Encadeamento por hash detecta adulteração de qualquer pacote de evidência ou do manifesto, desde que o log de auditoria não seja reescrito junto. Assinatura criptográfica acrescentaria não repúdio por chave, e exigiria gestão de chave que este artefato não tem — fica como extensão prevista, e não como propriedade afirmada. Referência: ABNT NBR ISO/IEC 27037:2013; Casey (2011).
 
 ## Reprodutibilidade
 
