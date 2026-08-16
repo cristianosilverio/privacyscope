@@ -104,9 +104,9 @@ outputs:
 - name: csv
   params:
     path: data/reexame_sem_politica/resultados.csv
-- name: csv_largo
+- name: csv_triagem
   params:
-    path: data/reexame_sem_politica/resultados_largo.csv
+    path: data/reexame_sem_politica/resultados_triagem.csv
 - name: csv_evidencias
   params:
     path: data/reexame_sem_politica/evidencias.csv

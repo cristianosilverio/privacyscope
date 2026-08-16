@@ -8,9 +8,9 @@ mal a todos.
     csv             uma linha por sitio e variavel — o formato fiel ao
                     armazenamento, com os campos escalares do registro de
                     auditoria promovidos a coluna.
-    csv_largo       uma linha por sitio, uma coluna por variavel — o formato de
-                    TRIAGEM, que permite ordenar sitios pela ausencia de sinais,
-                    que e o uso que a etapa de Monitoramento faz do instrumento.
+    csv_triagem     uma linha por sitio, uma coluna por variavel, ORDENADA por
+                    nao conformidade — a fila de trabalho de quem prioriza, que
+                    e o uso que a etapa de Monitoramento faz do instrumento.
     csv_evidencias  uma linha por SENTENCA sinalizada — a lista de trabalho de
                     quem confere. E o artefato que materializa o contrato de
                     triagem com verificacao humana.
@@ -115,15 +115,22 @@ class CsvLongo(OutputRenderer):
         return alvo.resolve()
 
 
-class CsvLargo(OutputRenderer):
-    """Uma linha por sitio, uma coluna por variavel. Formato de triagem."""
+class CsvTriagem(OutputRenderer):
+    """Uma linha por sitio, uma coluna por variavel, ORDENADA por nao conformidade.
 
-    name: ClassVar[str] = "csv_largo"
+    O nome diz o proposito, e nao a forma. Enquanto era apenas a versao larga do
+    formato longo, o nome anterior (`csv_largo`) fazia par com `csv` no vocabulario
+    corrente de dados.
+    Deixou de fazer quando ganhou ordenacao por nao conformidade e coluna de
+    prioridade: passou a ser duas coisas, e o nome dizia so uma.
+    """
+
+    name: ClassVar[str] = "csv_triagem"
     version: ClassVar[str] = "1.0.0"
 
     def render(self, store: ResultStore, params: dict[str, Any]) -> Path:
         R = coleta(store, params)
-        alvo = destino(params, "data/results/resultados_largo.csv")
+        alvo = destino(params, "data/results/resultados_triagem.csv")
 
         variaveis = sorted({r.variable_name for r in R})
         por_sitio: dict[str, dict[str, Any]] = OrderedDict()

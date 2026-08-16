@@ -18,7 +18,7 @@ def test_triagem_mostra_causa_raiz_e_nao_a_consequencia(tmp_path):
             protocol_version="t", plugin_version="1", run_id="R",
             timestamp_utc=datetime.now(timezone.utc)))
     loja.finish_run("R", errors_count=0)
-    alvo = resolve("output_renderers", "csv_largo")().render(
+    alvo = resolve("output_renderers", "csv_triagem")().render(
         loja, {"path": str(tmp_path / "largo.csv"), "run_id": "R"})
     loja.close()
     linhas = list(csv.DictReader(alvo.open(encoding="utf-8"), delimiter=";"))
@@ -31,7 +31,7 @@ def test_triagem_mostra_causa_raiz_e_nao_a_consequencia(tmp_path):
 # Ordenacao da triagem por nao conformidade
 # ---------------------------------------------------------------------------
 def _triagem(tmp_path, sitios):
-    """sitios = {dominio: {variavel: valor}} -> linhas do csv_largo, na ordem."""
+    """sitios = {dominio: {variavel: valor}} -> linhas do csv_triagem, na ordem."""
     import csv
     from datetime import datetime, timezone
     from privacyscope.core.plugin_registry import resolve
@@ -49,7 +49,7 @@ def _triagem(tmp_path, sitios):
                 plugin_version="1", run_id="R",
                 timestamp_utc=datetime.now(timezone.utc)))
     loja.finish_run("R", errors_count=0)
-    alvo = resolve("output_renderers", "csv_largo")().render(
+    alvo = resolve("output_renderers", "csv_triagem")().render(
         loja, {"path": str(tmp_path / "largo.csv"), "run_id": "R"})
     loja.close()
     return list(csv.DictReader(alvo.open(encoding="utf-8"), delimiter=";"))

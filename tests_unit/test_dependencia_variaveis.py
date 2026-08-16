@@ -145,7 +145,7 @@ def test_triagem_nao_conta_nao_aplicavel_como_ausencia(tmp_path):
     """Somar `nao_aplicavel` na contagem de sinais ausentes faria a ordenacao da
     triagem priorizar justamente os sitios em que nada foi medido."""
     from privacyscope.core.types import Domain, RawEvidence, VariableResult
-    from privacyscope.outputs.renderizadores import CsvLargo
+    from privacyscope.outputs.renderizadores import CsvTriagem
     import csv as _csv
 
     class Loja:
@@ -157,7 +157,7 @@ def test_triagem_nao_conta_nao_aplicavel_como_ausencia(tmp_path):
                     confidence=0.0, audit_trail={}, protocol_version="v",
                     plugin_version="1", run_id="r", timestamp_utc=agora)
 
-    alvo = CsvLargo().render(Loja(), {"path": str(tmp_path / "l.csv")})
+    alvo = CsvTriagem().render(Loja(), {"path": str(tmp_path / "l.csv")})
     linha = list(_csv.DictReader(alvo.open(encoding="utf-8"), delimiter=";"))[0]
     assert linha["n_sinais_ausentes"] == "1"
     assert linha["n_nao_aplicavel"] == "1"
@@ -186,7 +186,7 @@ def test_densidade_ordena_onde_o_binario_satura(tmp_path):
     """Duas politicas ambas positivas, uma com o dobro da densidade da outra: o
     valor binario nao as distingue, a densidade sim."""
     from privacyscope.core.types import VariableResult
-    from privacyscope.outputs.renderizadores import CsvLargo
+    from privacyscope.outputs.renderizadores import CsvTriagem
     import csv as _csv
     import json as _json
     agora = datetime.now(timezone.utc)
@@ -203,7 +203,7 @@ def test_densidade_ordena_onde_o_binario_satura(tmp_path):
                     protocol_version="v", plugin_version="1", run_id="r",
                     timestamp_utc=agora)
 
-    alvo = CsvLargo().render(Loja(), {"path": str(tmp_path / "l.csv")})
+    alvo = CsvTriagem().render(Loja(), {"path": str(tmp_path / "l.csv")})
     L = {r["dominio"]: r for r in _csv.DictReader(alvo.open(encoding="utf-8"),
                                                   delimiter=";")}
     assert L["densa.com.br"]["finalidade_especificada"] == "true"

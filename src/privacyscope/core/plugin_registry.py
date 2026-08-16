@@ -44,6 +44,8 @@ from privacyscope.core.interfaces import (
 )
 
 # --- Plugins concretos já existentes ------------------------------------
+from privacyscope.sources.coorte_reexame import CoorteReexameSource
+from privacyscope.sources.csv_lista import CsvSource
 from privacyscope.sources.tranco import TrancoSource
 from privacyscope.fetchers.http_fetcher import HttpFetcher
 from privacyscope.fetchers.playwright_fetcher import PlaywrightFetcher
@@ -68,6 +70,14 @@ from privacyscope.tests.ml_texto import (
 # =============================================================================
 SOURCES: dict[str, Type[SampleSource]] = {
     "tranco": TrancoSource,
+    # Lista fornecida por quem executa. O ranque de popularidade serve ao
+    # desenho amostral da pesquisa; nao serve a quem roda contra recorte
+    # setorial ou conjunto de orgaos.
+    "csv": CsvSource,
+    # Coorte definida por resultado de execucao anterior. NAO e amostra
+    # probabilistica: e censo de uma condicao, e prevalencia apurada sobre
+    # ela seria estimada na propria variavel que a definiu.
+    "coorte_reexame": CoorteReexameSource,
 }
 
 FETCHERS: dict[str, Type[PageFetcher]] = {
@@ -108,14 +118,16 @@ VARIABLE_TESTS: dict[str, Type[VariableTest]] = {
 }
 
 from privacyscope.outputs.renderizadores import (      # noqa: E402
-    CsvEvidencias, CsvLargo, CsvLongo, JsonEvidencia, ParquetLongo,
+    CsvEvidencias, CsvLongo, CsvTriagem, JsonEvidencia, ParquetLongo,
 )
 
 OUTPUT_RENDERERS: dict[str, Type[OutputRenderer]] = {
     # A sexta camada. Cinco artefatos porque quem tabula, quem prioriza, quem
     # verifica e quem reprocessa querem recortes distintos do mesmo conjunto.
     "csv": CsvLongo,
-    "csv_largo": CsvLargo,
+    # O nome diz o proposito: a saida e larga, mas o que a distingue do
+    # formato longo e a ordenacao por nao conformidade.
+    "csv_triagem": CsvTriagem,
     "csv_evidencias": CsvEvidencias,
     "parquet": ParquetLongo,
     "json": JsonEvidencia,

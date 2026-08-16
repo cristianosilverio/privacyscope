@@ -176,7 +176,7 @@ def main() -> int:
                          "params": {"db_path": "data/aovivo/results.sqlite"}},
         "outputs": [{"name": n, "params": {"path": f"data/aovivo/{a}"}}
                     for n, a in (("csv", "resultados.csv"),
-                                 ("csv_largo", "resultados_largo.csv"),
+                                 ("csv_triagem", "resultados_triagem.csv"),
                                  ("csv_evidencias", "evidencias.csv"),
                                  ("parquet", "resultados.parquet"),
                                  ("json", "resultados.json"))],

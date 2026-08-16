@@ -22,7 +22,7 @@
 #   privacyscope run protocols/exercicio_csv.yaml
 # =============================================================================
 metadata:
-  protocol_version: exercicio-csv-N2KLW-v1.0.0
+  protocol_version: exercicio-csv-N2KLW-v1.1.0
   description: 'Exercicio da fonte `csv`: 10 dominios .br da lista Tranco N2KLW, semente
     20260815, disjuntos da coleta ao vivo. NAO integra a amostra do trabalho.'
 sources:
@@ -105,9 +105,9 @@ outputs:
 - name: csv
   params:
     path: data/exercicio_csv/resultados.csv
-- name: csv_largo
+- name: csv_triagem
   params:
-    path: data/exercicio_csv/resultados_largo.csv
+    path: data/exercicio_csv/resultados_triagem.csv
 - name: csv_evidencias
   params:
     path: data/exercicio_csv/evidencias.csv

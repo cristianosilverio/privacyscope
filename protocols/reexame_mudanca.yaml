@@ -27,7 +27,7 @@
 #   privacyscope run protocols/reexame_mudanca.yaml
 # =============================================================================
 metadata:
-  protocol_version: reexame-mudanca-v1.0.0
+  protocol_version: reexame-mudanca-v1.1.0
   description: Reexame dos dominios cujo resultado difere entre as duas execucoes
     concluidas mais recentes da coleta ao vivo. Censo de uma condicao; nao e amostra
     probabilistica.
@@ -110,9 +110,9 @@ outputs:
 - name: csv
   params:
     path: data/reexame/resultados.csv
-- name: csv_largo
+- name: csv_triagem
   params:
-    path: data/reexame/resultados_largo.csv
+    path: data/reexame/resultados_triagem.csv
 - name: csv_evidencias
   params:
     path: data/reexame/evidencias.csv

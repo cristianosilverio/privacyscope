@@ -16,7 +16,7 @@ def _protocolo(tmp_path, com_saidas=True):
     if com_saidas:
         d["outputs"] = [
             {"name": "csv", "params": {"path": str(tmp_path / "saida.csv")}},
-            {"name": "csv_largo", "params": {"path": str(tmp_path / "largo.csv")}},
+            {"name": "csv_triagem", "params": {"path": str(tmp_path / "largo.csv")}},
         ]
     else:
         d.pop("outputs", None)
@@ -97,3 +97,27 @@ def test_render_nao_toca_a_camada_de_evidencia(tmp_path, monkeypatch):
     monkeypatch.setattr(mod.Orchestrator, "_analyze_evidence", nao)
     assert main(["render", str(proto)]) == 0
     assert not chamou["analyze"]
+
+
+def test_todos_os_caminhos_que_encerram_analise_rendem(tmp_path):
+    """`run` e `analyze` produzem resultados e devem fechar o ciclo do mesmo modo.
+
+    O defeito que motivou este teste: a chamada dos renderizadores foi acrescentada
+    ao fim de `analyze_only` e esquecida em `run`, de sorte que a coleta ao vivo
+    concluiu sem gerar artefato de saida algum — sem erro, sem aviso.
+    """
+    import inspect
+    from privacyscope.orchestrator import Orchestrator
+    for metodo in ("run", "analyze_only"):
+        fonte = inspect.getsource(getattr(Orchestrator, metodo))
+        assert "render_outputs" in fonte, (
+            f"Orchestrator.{metodo} nao chama render_outputs; a execucao encerraria "
+            f"sem artefato de saida")
+
+
+def test_coleta_isolada_nao_rende():
+    """`collect_only` para na terceira camada e nao produz resultado: render ali
+    geraria arquivo vazio e daria impressao de saida legitima."""
+    import inspect
+    from privacyscope.orchestrator import Orchestrator
+    assert "render_outputs" not in inspect.getsource(Orchestrator.collect_only)

@@ -116,9 +116,9 @@ outputs:
 - name: csv
   params:
     path: data/padrao/resultados.csv
-- name: csv_largo
+- name: csv_triagem
   params:
-    path: data/padrao/resultados_largo.csv
+    path: data/padrao/resultados_triagem.csv
 - name: csv_evidencias
   params:
     path: data/padrao/evidencias.csv

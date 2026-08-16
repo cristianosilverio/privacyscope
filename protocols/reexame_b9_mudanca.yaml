@@ -1,0 +1,106 @@
+# =============================================================================
+# REEXAME DA COORTE DE MUDANCA DE b9 — VERIFICACAO DA CORRECAO, NAO AMOSTRA
+#
+# Coorte dos dominios cujo resultado difere entre as duas execucoes concluidas mais
+# recentes de data/b9/results.sqlite. Hoje essas duas sao a apuracao original e a
+# reanalise sob identificador proprio, de sorte que a coorte e, literalmente, a
+# lista dos vereditos que a correcao do desafio anti-bot alterou.
+#
+# O QUE ESTA EXECUCAO PROVA, E O QUE NAO PROVA
+# --------------------------------------------
+# Quem valida a correcao e a SELECAO, e nao esta coleta: se a coorte trouxer os dois
+# sitios previstos e mais nenhum, a correcao fez o que devia e nao vazou para as
+# variaveis medidas na raiz. Isso se verifica sem coletar coisa alguma.
+#
+# Coletar de novo responde a OUTRA pergunta, que tambem interessa: se o desafio
+# persiste. A resposta esperada e que sim, e que o detector corrigido devolva
+# `nao_coletado` em lugar de `false` — o que fecha o ciclo de ponta a ponta, do
+# defeito a correcao a reverificacao em campo.
+#
+# NAO SE ESTIMA PREVALENCIA AQUI. A coorte foi definida pela propria variavel que se
+# pretenderia estimar, e censo de uma condicao nao vira taxa.
+#
+# Grava em banco PROPRIO: escrever de volta em data/b9/ acrescentaria uma terceira
+# execucao ao conjunto que serve de origem da comparacao, e a proxima comparacao
+# passaria a confrontar a coorte com o todo.
+#
+# Uso:
+#   privacyscope run protocols/reexame_b9_mudanca.yaml
+# =============================================================================
+metadata:
+  protocol_version: reexame-b9-mudanca-v1.1.0
+  description: Reexame dos dominios cujo veredito diferiu entre a apuracao original
+    de b9 e a reanalise que corrigiu o desafio anti-bot. Censo de uma condicao; nao
+    e amostra.
+sources:
+- name: coorte_reexame
+  params:
+    db_path: data/b9/results.sqlite
+    mudanca: true
+    max_n: 50
+repository:
+  name: filesystem
+  params:
+    base_path: data/reexame_b9/
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+    - name: http_simples
+      params:
+        respect_robots_txt: true
+        max_per_category: 2
+        max_total_subpages: 6
+        connect_timeout_s: 8
+        read_timeout_s: 15
+      escalate_if:
+      - signal: cookies_pre_consent_zero
+      - signal: html_root_smaller_than_bytes
+        threshold: 5000
+      - signal: subpage_selection_empty
+      - signal: has_js_shell_markers
+      - exception: JsRequiredError
+      - exception: NavigationFailedError
+      - exception: FetchError
+    - name: playwright
+      params:
+        headless: true
+        phase_screenshots: true
+        revoke_after_consent: false
+        navigation_timeout_ms: 15000
+        scroll_max_iterations: 3
+        max_per_category: 2
+        max_total_subpages: 6
+    max_retries_per_fetcher: 0
+    abort_on:
+    - exception: RobotsDisallowedError
+tests:
+- name: banner_cookies
+  rules_file: config/rules/banner_cookies.yaml
+  params: {}
+- name: politica_privacidade
+  rules_file: config/rules/politica_privacidade.yaml
+  params: {}
+- name: canal_titular
+  rules_file: config/rules/canal_titular.yaml
+  params: {}
+result_store:
+  name: sqlite
+  params:
+    db_path: data/reexame_b9/results.sqlite
+outputs:
+- name: csv
+  params:
+    path: data/reexame_b9/resultados.csv
+- name: csv_triagem
+  params:
+    path: data/reexame_b9/resultados_triagem.csv
+- name: csv_evidencias
+  params:
+    path: data/reexame_b9/evidencias.csv
+- name: parquet
+  params:
+    path: data/reexame_b9/resultados.parquet
+- name: json
+  params:
+    path: data/reexame_b9/resultados.json
