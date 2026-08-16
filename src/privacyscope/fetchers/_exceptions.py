@@ -34,6 +34,11 @@ Ao criar um novo plugin de Coleta (qualquer subclasse de ``PageFetcher``):
    - ``JsRequiredError``: página exige JavaScript para renderizar conteúdo
      útil. Sinal específico para o FallbackChain escalar para fetcher com
      browser real (PlaywrightFetcher).
+   - ``AmbienteIncompletoError``: dependência do ambiente ausente — navegador
+     do Playwright não instalado, por exemplo. NÃO é falha do sítio, e por isso
+     NÃO escalona nem é registrada como atrito de coleta: ela ABORTA a execução.
+     Degradar em silêncio produziria amostra enviesada para os sítios que
+     dispensam escalonamento, que são justamente os mais simples.
 
 4. **Não capture e re-lance silenciosamente**. Erros não-fatais (timeout em
    subpágina, robots.txt ignora um link específico, etc.) devem ir para
@@ -50,6 +55,23 @@ class FetchError(Exception):
     essa classe-base para decidir escalonamento.
     """
 
+
+
+class AmbienteIncompletoError(FetchError):
+    """Dependencia do ambiente ausente, e nao falha do sitio.
+
+    Derivada de FetchError apenas para conveniencia de tipagem; o FallbackChain a
+    trata a parte, abortando a execucao em vez de escalonar. A distincao importa:
+    falha de sitio e atrito de coleta, registrado e reportado; ambiente incompleto
+    afeta TODOS os sitios igualmente, e prosseguir produziria amostra enviesada para
+    os que dispensam escalonamento — os mais simples, e portanto os menos
+    informativos.
+
+    Descoberta que motivou a classe: coleta ao vivo iniciada com o navegador do
+    Playwright ausente do ambiente. A cadeia escalava, o lancamento falhava, e cada
+    sitio saia sem evidencia; nao houvesse quem lesse o registro, a amostra chegaria
+    ao fim com atrito inexplicado e sem causa visivel.
+    """
 
 class RobotsDisallowedError(FetchError):
     """robots.txt do site proíbe coleta pelo nosso User-Agent.

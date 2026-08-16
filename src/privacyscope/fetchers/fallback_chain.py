@@ -36,7 +36,9 @@ from typing import Any, ClassVar
 
 from privacyscope.core.interfaces import PageFetcher
 from privacyscope.core.types import Domain, RawEvidence
-from privacyscope.fetchers._exceptions import FetchError
+from privacyscope.fetchers._exceptions import (
+    AmbienteIncompletoError, FetchError,
+)
 from privacyscope.fetchers._signals import SIGNAL_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,22 @@ DEFAULT_BACKOFF_FACTOR = 2.0
 # =============================================================================
 # FallbackChain
 # =============================================================================
+
+# Marcas com que o Playwright anuncia navegador ausente. Compara-se pelo texto
+# porque a biblioteca nao expoe classe propria para o caso.
+_MARCAS_AMBIENTE = (
+    "executable doesn't exist",
+    "please run the following command to download new browsers",
+    "playwright install",
+    "browsertype.launch: ",
+)
+
+
+def _e_ambiente_incompleto(e: BaseException) -> bool:
+    texto = f"{type(e).__name__}: {e}".lower()
+    return any(m in texto for m in _MARCAS_AMBIENTE)
+
+
 class FallbackChain(PageFetcher):
     """Cadeia ordenada de fetchers com escalonamento por sinais.
 
@@ -262,6 +280,18 @@ class FallbackChain(PageFetcher):
                 last_exception = None
                 return evidence, last_exception, audit_lines
             except BaseException as e:
+                # Ambiente incompleto nao e falha do sitio: afeta todos igualmente,
+                # e escalonar ou seguir adiante produziria amostra enviesada para os
+                # sitios que dispensam escalonamento. Aborta.
+                if _e_ambiente_incompleto(e):
+                    raise AmbienteIncompletoError(
+                        f"{fetcher.name}: dependencia do ambiente ausente — {e}\n"
+                        f"O navegador do Playwright nao esta instalado neste ambiente. "
+                        f"Instale com:\n    playwright install chromium\n"
+                        f"A execucao foi interrompida deliberadamente: prosseguir "
+                        f"perderia todo sitio que exija escalonamento, e a amostra "
+                        f"resultante ficaria enviesada para os mais simples."
+                    ) from e
                 duration_ms = int((time.perf_counter() - t0) * 1000)
                 msg = str(e)[:120].replace("\n", " ")
                 audit_lines.append(
