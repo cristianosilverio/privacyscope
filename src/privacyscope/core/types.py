@@ -241,7 +241,23 @@ NAO_COLETADO = "nao_coletado"
 # — mensagem de erro, renderizador, verificador — leia daqui em vez de manter copia
 # propria: a lista escrita a mao em `coorte_reexame` anunciou tres estados por meses
 # depois de o quarto existir.
-ESTADOS_INDETERMINADOS = (NAO_APLICAVEL, NAO_COLETADO)
+# Quinto estado. `nao_coletado` diz que o instrumento nao obteve o objeto; este diz
+# que o objeto NAO EXISTE no endereco declarado. A diferenca nao e de grau: a primeira
+# e falha do instrumento, a segunda e defeito do QUADRO AMOSTRAL, e nenhum coletor a
+# corrige.
+#
+# Medido na coleta ao vivo de 15/08/2026: das 20 unidades sem coleta, 10 tinham nome
+# que nao e ponto de entrada de sitio algum — subdominio arbitrario
+# (portaldeservicos.pdpj.jus.br), grafia distinta (policiacivil sem hifen), outro
+# dominio (fulltrack-tools.ftdata.com.br) ou categoria de segundo nivel (ia.br). A
+# lista de popularidade entrega DOMINIOS REGISTRAVEIS; a etapa de Monitoramento
+# precisa de PONTOS DE ENTRADA, e nao sao a mesma coisa.
+#
+# Somar as duas na taxa de alcance misturaria defeito de quadro com defeito de
+# instrumento — o mesmo erro categorial que o terceiro e o quarto estado desfizeram.
+UNIDADE_INEXISTENTE = "unidade_inexistente"
+
+ESTADOS_INDETERMINADOS = (NAO_APLICAVEL, NAO_COLETADO, UNIDADE_INEXISTENTE)
 
 
 class VariableResult(BaseModel):
