@@ -1,0 +1,148 @@
+# =============================================================================
+# DIAGNOSTICO DAS UNIDADES SEM COLETA — NAO E AMOSTRA
+#
+# Os 20 dominios que a coleta ao vivo declarou e nao apurou. Nenhum deles produziu
+# pacote de evidencia: a diferenca e entre o declarado no protocolo e o registrado
+# no resultado, e o manifesto confirma que a falha foi de COLETA, e nao de analise.
+#
+# O QUE ESTA EXECUCAO PRODUZ
+# --------------------------
+# Causa classificada por unidade, como DADO e nao como linha de log. Sob o
+# orquestrador corrigido, a unidade que falha grava `nao_coletado` com motivo:
+# `robots_proibe`, `coleta_expirou`, `ambiente_incompleto` ou `coleta_falhou`.
+# A distincao importa: proibicao por robots e decisao do controlador, e vira achado
+# normativo; tempo esgotado ou barreira anti-bot e limitacao do instrumento.
+#
+# O FETCHER E O MESMO, DE PROPOSITO
+# ---------------------------------
+# Nada aqui e afrouxado em relacao a protocols/aovivo.yaml — nem tempo limite, nem
+# numero de tentativas, nem tratamento de robots. Alterar a configuracao
+# confundiria "causa da falha" com "instrumento diferente", e a comparacao com a
+# execucao original deixaria de valer.
+#
+# DEFASAGEM, QUE VAI DECLARADA
+# ----------------------------
+# A execucao original foi em 15/08/2026. Esta mede a disponibilidade de HOJE. Sitio
+# que expirou naquela noite pode responder agora, e o inverso tambem. A tabela
+# resultante classifica causas OBSERVADAS NA REEXECUCAO, e nao reconstroi a falha
+# original — os motivos originais existiam apenas em terminal e nao foram
+# transcritos.
+#
+# ESTRATO
+# -------
+# A lista traz `estrato`, porque a pergunta nao e quantos falharam e sim se algum
+# estrato falha mais. Na execucao original, 6 dos 13 governamentais ficaram sem
+# coleta (46,2%) contra 14 dos 87 demais (16,1%) — razao de 2,87 vezes, Fisher
+# bilateral p = 0,021. Estrato de treze unidades, de sorte que isso e sinal e nao
+# conclusao; esta execucao existe para confirma-lo ou desmenti-lo.
+#
+# Uso:
+#   python scripts/listar_sem_coleta.py protocols/aovivo.yaml \
+#       --saida protocols/diagnostico_20_lista.csv
+#   python scripts/declarar_lista.py protocols/diagnostico_20.yaml
+#   privacyscope --verbose run protocols/diagnostico_20.yaml
+# =============================================================================
+metadata:
+  protocol_version: diagnostico-sem-coleta-v1.0.0
+  description: Diagnostico das 20 unidades declaradas e nao apuradas na coleta ao
+    vivo de 15/08/2026. Apura causa de falha de coleta; nao integra amostra alguma.
+sources:
+- name: csv
+  params:
+    path: protocols/diagnostico_20_lista.csv
+    coluna_dominio: url
+    coluna_estrato: estrato
+    sha256: c47c6029b539e81b7c67750b648d7bd372f6dbcc404d8afd7e17dea150b59446
+    max_n: 20
+repository:
+  name: filesystem
+  params:
+    base_path: data/diagnostico_20/
+fetcher:
+  name: fallback_chain
+  params:
+    fetchers:
+    - name: http_simples
+      params:
+        respect_robots_txt: true
+        max_per_category: 2
+        max_total_subpages: 6
+        connect_timeout_s: 8
+        read_timeout_s: 15
+      escalate_if:
+      - signal: cookies_pre_consent_zero
+      - signal: html_root_smaller_than_bytes
+        threshold: 5000
+      - signal: subpage_selection_empty
+      - signal: has_js_shell_markers
+      - exception: JsRequiredError
+      - exception: NavigationFailedError
+      - exception: FetchError
+    - name: playwright
+      params:
+        headless: true
+        phase_screenshots: true
+        revoke_after_consent: false
+        navigation_timeout_ms: 15000
+        scroll_max_iterations: 3
+        max_per_category: 2
+        max_total_subpages: 6
+    max_retries_per_fetcher: 0
+    abort_on:
+    - exception: RobotsDisallowedError
+    # Nome que nao resolve nao melhora com outro coletor: medido em 17/08/2026, o
+    # Playwright devolveu ERR_NAME_NOT_RESOLVED nos mesmos cinco casos em que o
+    # coletor por requisicao simples ja havia concluido o mesmo. Escalar custava 15
+    # segundos por unidade e, pior, substituia NomeNaoResolveError por FetchError
+    # generico — o que apagava a distincao entre defeito do quadro amostral e falha
+    # de coleta, e impedia o estado `unidade_inexistente` de existir.
+    - exception: NomeNaoResolveError
+tests:
+- name: banner_cookies
+  rules_file: config/rules/banner_cookies.yaml
+  params: {}
+- name: politica_privacidade
+  rules_file: config/rules/politica_privacidade.yaml
+  params: {}
+- name: canal_titular_ml
+  params:
+    modelo_file: models/canal-titular-v1.0.0.npz
+    modelo_sha256: df5f83e297a13eeae39b2e1f1dbd5406444f81410152159c587f50b5aaa37401
+- name: finalidade_especificada
+  params:
+    modelo_file: models/textuais-finalidade-v1.0.0.npz
+    modelo_sha256: cf474b9bf6133dc374e0f0720835da6b8e669a67f3008ae4f970a27db96ae0c0
+    depende_de:
+    - tem_politica_privacidade
+- name: direitos_titular_explicados
+  params:
+    modelo_file: models/textuais-direitos_titular-v1.0.0.npz
+    modelo_sha256: a2912290b9911114715a7dd0ea2170bea5e349db39b92b12a6e9c12e84f91a01
+    depende_de:
+    - tem_politica_privacidade
+- name: transf_internacional_divulgada
+  params:
+    modelo_file: models/textuais-transf_internacional-v1.0.0.npz
+    modelo_sha256: ba65b01f76606776b220befc40de2025341f4326ab79e1658bcb3049016c7dff
+    depende_de:
+    - tem_politica_privacidade
+result_store:
+  name: sqlite
+  params:
+    db_path: data/diagnostico_20/results.sqlite
+outputs:
+- name: csv
+  params:
+    path: data/diagnostico_20/resultados.csv
+- name: csv_triagem
+  params:
+    path: data/diagnostico_20/resultados_triagem.csv
+- name: csv_evidencias
+  params:
+    path: data/diagnostico_20/evidencias.csv
+- name: parquet
+  params:
+    path: data/diagnostico_20/resultados.parquet
+- name: json
+  params:
+    path: data/diagnostico_20/resultados.json
