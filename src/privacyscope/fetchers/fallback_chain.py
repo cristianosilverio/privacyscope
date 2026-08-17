@@ -293,12 +293,20 @@ class FallbackChain(PageFetcher):
                         f"resultante ficaria enviesada para os mais simples."
                     ) from e
                 duration_ms = int((time.perf_counter() - t0) * 1000)
-                msg = str(e)[:120].replace("\n", " ")
+                texto = str(e).replace("\n", " ")
+                msg = texto[:120]
                 audit_lines.append(
                     f"chain.attempt fetcher={fetcher.name} retry={attempt} "
                     f"exception={type(e).__name__} message={msg!r} "
                     f"duration_ms={duration_ms}"
                 )
+                # A marca de TLS vira linha PROPRIA de auditoria, e nao trecho da
+                # mensagem: `message` e truncada em 120 caracteres, e o achado sobre
+                # o certificado ficava de fora justamente nas unidades que se perdem
+                # por outro motivo — que sao as que mais precisam dele. Caso de
+                # acessorh.com.br, cujo certificado e de api.people.unico.app.
+                if "tls.defeito" in texto:
+                    audit_lines.append(texto[texto.index("tls.defeito"):][:400])
                 last_exception = e
                 if attempt < max_retries:
                     delay_ms = backoff_initial_ms * (backoff_factor ** attempt)

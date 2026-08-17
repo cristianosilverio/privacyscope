@@ -166,3 +166,40 @@ def test_marca_de_tls_nao_altera_o_motivo_da_perda():
                     "cn": "outro.app", "sans": [], "emissor": "CA",
                     "valido_ate": "", "detalhe": ""}))
     assert Orchestrator._motivo_da_falha(FetchError(msg)) == "coleta_expirou"
+
+
+def test_marca_vira_linha_propria_de_auditoria_e_nao_e_truncada():
+    """`message` da tentativa e truncada em 120 caracteres. Anexar a marca ao fim da
+    mensagem a fazia desaparecer exatamente nas unidades perdidas por outro motivo —
+    que sao as que mais precisam do achado."""
+    import asyncio
+    from datetime import datetime, timezone
+
+    from privacyscope.core.types import Domain
+    from privacyscope.fetchers._exceptions import FetchError
+    from privacyscope.fetchers.fallback_chain import FallbackChain
+
+    marca_tls = marca({"estado": "certificado_de_terceiro", "host": "acessorh.com.br",
+                       "cn": "api.people.unico.app", "sans": [],
+                       "emissor": "Google Trust Services", "valido_ate": "2026-11-02",
+                       "detalhe": ""})
+    longa = "x" * 300  # empurra a marca para alem do corte de 120
+
+    class F:
+        def __init__(self, n): self.name, self.version = n, "1"
+        async def fetch(self, d, p):
+            raise FetchError(f"{longa} | {marca_tls}")
+
+    c = FallbackChain([F("http_simples"), F("playwright")])
+    params = {"fetchers": [
+        {"name": "http_simples", "params": {}, "escalate_if": [{"exception": "FetchError"}]},
+        {"name": "playwright", "params": {}, "escalate_if": []}],
+        "max_retries_per_fetcher": 0, "abort_on": []}
+    try:
+        asyncio.run(c.fetch(Domain(url="https://acessorh.com.br", tld=".br",
+                                   source_name="t"), params))
+        raise AssertionError("deveria ter levantado")
+    except Exception as e:
+        extra = Orchestrator._le_marca_tls(str(e))
+    assert extra.get("tls_estado") == "certificado_de_terceiro"
+    assert extra.get("tls_certificado_de") == "api.people.unico.app"
