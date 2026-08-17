@@ -36,6 +36,7 @@ import httpx
 from privacyscope.core.interfaces import PageFetcher
 from privacyscope.core.types import Domain, RawEvidence, utc_now
 from privacyscope.fetchers._exceptions import (
+    NomeNaoResolveError,
     FetchError,
     ResponseTooLargeError,
     RobotsDisallowedError,
@@ -76,6 +77,49 @@ DEFAULT_MAX_RESPONSE_BYTES = 5_000_000  # 5 MB
 # =============================================================================
 # HttpFetcher
 # =============================================================================
+def _com_www(url: str) -> str | None:
+    """URL equivalente com `www.` no hospedeiro, ou None quando nao cabe.
+
+    Nao cabe quando o hospedeiro ja comeca por `www.` nem quando e endereco numerico.
+
+    Sobre subdominio o prefixo e aplicado assim mesmo. Distinguir `sgisistemas.com.br`
+    — dominio registravel de tres rotulos — de `smart.sgisistemas.com.br` exigiria
+    lista de sufixos publicos no caminho quente do coletor, e o custo de errar e uma
+    consulta de nome que nao resolve. Contar rotulos sem a lista daria a resposta
+    errada justamente no `.com.br`, que e o caso do trabalho.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    partes = urlsplit(url)
+    host = (partes.hostname or "").lower()
+    if not host or host.startswith("www.") or host.replace(".", "").isdigit():
+        return None
+    porta = f":{partes.port}" if partes.port else ""
+    return urlunsplit((partes.scheme, f"www.{host}{porta}", partes.path or "/",
+                       partes.query, partes.fragment))
+
+
+def _e_certificado(exc: Exception) -> bool:
+    """Falha de VALIDACAO de certificado, e nao de alcance do hospedeiro."""
+    t = f"{type(exc).__name__}: {exc}".lower()
+    return ("certificate_verify_failed" in t or "certificate verify failed" in t
+            or "sslcertverification" in t)
+
+
+def _e_falha_de_nome(exc: Exception) -> bool:
+    """Diz se a falha e de RESOLUCAO DE NOME, e nao de alcance do hospedeiro.
+
+    A distincao decide entre `NomeNaoResolveError` — defeito do quadro amostral — e
+    falha de coleta comum. Hospedeiro que resolve e nao responde existe; nome que nao
+    resolve, nao.
+    """
+    texto = f"{type(exc).__name__}: {exc}".lower()
+    marcas = ("getaddrinfo failed", "name or service not known",
+              "nodename nor servname", "temporary failure in name resolution",
+              "[errno 11001]", "[errno -2]", "[errno -5]")
+    return any(m in texto for m in marcas)
+
+
 class HttpFetcher(PageFetcher):
     """Coleta HTTP simples (sem JS).
 
@@ -277,6 +321,43 @@ class HttpFetcher(PageFetcher):
     # ------------------------------------------------------------------
     # Implementação principal: fetch(domain, params) -> RawEvidence
     # ------------------------------------------------------------------
+    async def _segunda_passagem(self, domain, params, url_falha, exc):
+        """Refaz a coleta sem validar o certificado, guardando o que foi apresentado.
+
+        Reentra por `fetch` em vez de reestruturar o corpo: a passagem permissiva e
+        rara e precisa repetir robots e raiz de qualquer modo, porque o hospedeiro
+        efetivo pode ser outro.
+        """
+        from urllib.parse import urlsplit
+
+        from privacyscope.fetchers._tls import inspeciona
+        from privacyscope.fetchers._tls import marca as _marca_tls_resumo
+
+        host = urlsplit(url_falha).hostname or urlsplit(domain.url).hostname or ""
+        info = inspeciona(host)
+        info["detalhe"] = info.get("detalhe") or f"{type(exc).__name__}: {str(exc)[:150]}"
+        logger.warning("certificado nao valida em %s (%s%s); coletando e registrando",
+                       host, info.get("estado"),
+                       f", cn={info.get('cn')!r}" if info.get("cn") else "")
+        p2 = dict(params)
+        p2["_tls_permissivo"] = True
+        p2["_tls_info"] = info
+        try:
+            return await self.fetch(domain, p2)
+        except Exception as e2:                                 # noqa: BLE001
+            # A unidade se perde por outro motivo, mas o certificado JA foi
+            # inspecionado — e essa e a informacao que interessa a quem monitora.
+            # Sem carrega-la para dentro da falha, ela existiria so no log: foi o
+            # caso de acessorh.com.br, cujo certificado e de api.people.unico.app e
+            # cuja coleta falhou depois, no destino do redirecionamento.
+            #
+            # O `detalhe` fica de fora de proposito: ele contem o texto do erro de
+            # certificado, e a classificacao do motivo le a mensagem — incluir o
+            # detalhe faria a unidade ser rotulada `tls_invalido` quando o que a
+            # perdeu foi tempo esgotado.
+            resumo = dict(info); resumo["detalhe"] = ""
+            raise type(e2)(f"{e2} | {_marca_tls_resumo(resumo)}") from e2
+
     async def fetch(self, domain: Domain, params: dict[str, Any]) -> RawEvidence:
         cfg = self._validate_params(params)
 
@@ -314,13 +395,20 @@ class HttpFetcher(PageFetcher):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
         }
+        # `_tls_permissivo` e interno: nao vem do protocolo, e sim da propria segunda
+        # passagem quando a primeira encontra certificado que nao valida. Coletar e
+        # REGISTRAR o defeito e melhor que desistir — desistir apagaria o achado, e
+        # quem julga a evidencia e quem a examina, nao o instrumento.
+        permissivo = bool(params.get("_tls_permissivo"))
         async with httpx.AsyncClient(
             timeout=timeout,
             max_redirects=cfg["max_redirects"],
             follow_redirects=True,
             headers=client_headers,
+            verify=not permissivo,
         ) as client:
             # 3) Coleta da raiz (falha aqui é fatal)
+            domain_url_efetiva = domain.url
             try:
                 root_body, root_headers, root_cookies, root_net, root_final_url = (
                     await self._fetch_one(
@@ -328,10 +416,68 @@ class HttpFetcher(PageFetcher):
                     )
                 )
             except httpx.HTTPError as e:
-                raise FetchError(f"falha ao coletar raiz {domain.url}: {type(e).__name__}: {e}") from e
+                if _e_certificado(e) and not permissivo:
+                    return await self._segunda_passagem(domain, params, domain.url, e)
+                # VARIANTE `www.`
+                # ---------------
+                # O PlaywrightFetcher ja tenta `www.` em qualquer falha de navegacao;
+                # este coletor nao tentava, e a inconsistencia custou 9 unidades em
+                # 100 na coleta ao vivo de 15/08/2026 — nomes cujo apex nao resolve ou
+                # nao aceita conexao, e cujo `www.` responde. Mesma regra nos dois
+                # coletores, e nao heuristica nova em um deles.
+                #
+                # E a UNICA transformacao aplicada. Adivinhar subdominio a partir do
+                # nome seria inventar dado: `portaldeservicos.pdpj.jus.br` e
+                # `fulltrack-tools.ftdata.com.br` nao saem de regra alguma, e essas
+                # unidades sao defeito do quadro, nao do coletor.
+                alvo_www = _com_www(domain.url)
+                erro_apex = f"{type(e).__name__}: {e}"
+                if not alvo_www:
+                    if _e_falha_de_nome(e):
+                        raise NomeNaoResolveError(
+                            f"{domain.url} nao resolve: {erro_apex}") from e
+                    raise FetchError(
+                        f"falha ao coletar raiz {domain.url}: {erro_apex}") from e
+
+                # O robots do host efetivo precisa ser reavaliado: coletar `www.` sob
+                # permissao apurada no apex seria decidir por documento que nao rege o
+                # hospedeiro acessado.
+                if cfg["respect_robots_txt"]:
+                    parser_www, msg_www = await self._load_robots(
+                        alvo_www, cfg["user_agent"], cfg["read_timeout_s"])
+                    if msg_www:
+                        errors.append(msg_www)
+                    if parser_www is not None and not parser_www.can_fetch(
+                        cfg["user_agent"], alvo_www
+                    ):
+                        raise RobotsDisallowedError(
+                            f"robots.txt proibe coleta de {alvo_www} pelo UA "
+                            f"{cfg['user_agent']!r}")
+                    robot_parser = parser_www
+
+                try:
+                    root_body, root_headers, root_cookies, root_net, root_final_url = (
+                        await self._fetch_one(
+                            client, alvo_www, cfg["max_response_bytes"]
+                        )
+                    )
+                except httpx.HTTPError as e2:
+                    if _e_certificado(e2) and not permissivo:
+                        return await self._segunda_passagem(domain, params, alvo_www, e2)
+                    erro_www = f"{type(e2).__name__}: {e2}"
+                    if _e_falha_de_nome(e) and _e_falha_de_nome(e2):
+                        raise NomeNaoResolveError(
+                            f"{domain.url} nao resolve, nem {alvo_www}: "
+                            f"apex={erro_apex}; www={erro_www}") from e2
+                    raise FetchError(
+                        f"falha ao coletar raiz {domain.url}: {erro_apex}; "
+                        f"variante {alvo_www}: {erro_www}") from e2
+                errors.append(f"raiz obtida na variante {alvo_www} "
+                              f"(apex falhou: {erro_apex})")
+                domain_url_efetiva = alvo_www
 
             html_pages["/"] = root_body
-            headers_by_url[domain.url] = root_headers
+            headers_by_url[domain_url_efetiva] = root_headers
             all_cookies.extend(root_cookies)
             network_log.append(root_net)
 
@@ -473,6 +619,11 @@ class HttpFetcher(PageFetcher):
         cookies_by_phase: dict[str, list[dict]] = {}
         if all_cookies:
             cookies_by_phase["single"] = all_cookies
+
+        info_tls = params.get("_tls_info")
+        if info_tls:
+            from privacyscope.fetchers._tls import marca as _marca_tls
+            errors.append(_marca_tls(info_tls))
 
         return RawEvidence(
             domain=domain,

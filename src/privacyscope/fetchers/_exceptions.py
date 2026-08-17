@@ -73,6 +73,19 @@ class AmbienteIncompletoError(FetchError):
     ao fim com atrito inexplicado e sem causa visivel.
     """
 
+class NomeNaoResolveError(FetchError):
+    """O nome declarado nao resolve, nem na variante com `www.`.
+
+    Distinta das demais falhas de coleta porque nao e falha de coleta: o endereco
+    nao designa hospedeiro algum. Nenhum tempo limite maior, nenhum coletor melhor e
+    nenhuma nova tentativa a resolvem — o defeito esta no quadro amostral, que
+    registrou um nome que nao e ponto de entrada de sitio.
+
+    Levanta-se so depois de esgotada a unica transformacao deterministica disponivel,
+    o prefixo `www.`. Fora dela, adivinhar subdominio seria inventar dado.
+    """
+
+
 class RobotsDisallowedError(FetchError):
     """robots.txt do site proíbe coleta pelo nosso User-Agent.
 

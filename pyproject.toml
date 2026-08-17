@@ -42,6 +42,12 @@ dependencies = [
     "scipy>=1.11",
     # Leitura e escrita das planilhas de rotulagem e dos instrumentos de validacao.
     "openpyxl>=3.1",
+    # Leitura do certificado apresentado pelo hospedeiro: nome comum, nomes
+    # alternativos e emissor. Sem ela, o defeito de TLS e detectado mas nao se sabe
+    # DE QUEM e o certificado — que e justamente a informacao que interessa a quem
+    # monitora. Faltava declarada, e o efeito foi silencioso: `tls_estado` saia
+    # `indeterminado` em ambiente sem a biblioteca.
+    "cryptography>=42.0",
     "pymupdf>=1.24",
     "pytesseract>=0.3.10",
     "Pillow>=10.0",
