@@ -31,7 +31,8 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from privacyscope.core.interfaces import OutputRenderer, ResultStore
-from privacyscope.core.types import NAO_APLICAVEL, NAO_COLETADO
+from privacyscope.core.types import (
+    NAO_APLICAVEL, NAO_COLETADO, UNIDADE_INEXISTENTE)
 from privacyscope.outputs._comum import (
     COLUNAS_BASE, DERIVADAS, ESCALARES, coleta, densidade, destino, dominio,
     linha_plana, sentencas, trilha,
@@ -46,9 +47,14 @@ def _estado(valor) -> str:
     indicador enviesado exatamente na direcao que o trabalho quer medir.
 
     `nao_coletado` e ainda mais distante de `false`: nao houve sitio a medir, seja
-    porque a coleta falhou, seja porque a origem devolveu desafio anti-bot. O
-    primeiro estado fala do sitio; o segundo, do instrumento.
+    porque a coleta falhou, seja porque a origem devolveu desafio anti-bot.
+
+    `unidade_inexistente` esta num terceiro plano: o endereco declarado nao designa
+    hospedeiro algum. O primeiro estado fala do sitio, o segundo do instrumento, o
+    terceiro do QUADRO AMOSTRAL — e sao tres responsaveis diferentes.
     """
+    if valor == UNIDADE_INEXISTENTE or valor == "unidade_inexistente":
+        return UNIDADE_INEXISTENTE
     if valor == NAO_COLETADO or valor == "nao_coletado":
         return NAO_COLETADO
     if valor == NAO_APLICAVEL or valor == "nao_aplicavel":
@@ -78,7 +84,7 @@ def _prioridade(d: dict) -> tuple:
     Ordem lexicografica ancorada no GRAFO DE DEPENDENCIAS declarado no protocolo,
     que e fato estrutural e nao juizo de gravidade:
 
-    1. sitios com alguma variavel NAO COLETADA vao para o fim. Perfil incompleto nao
+    1. sitios sem medicao — nao coletados ou inexistentes — vao para o fim. Perfil incompleto nao
        se compara com perfil completo, e recoleta e outra fila que nao a de
        fiscalizacao. A coluna `motivo_nao_coleta` os identifica.
     2. numero de variaveis que ficaram SEM MEDICAO por precondicao nao satisfeita.
@@ -91,7 +97,7 @@ def _prioridade(d: dict) -> tuple:
     que politica exigiria fonte que o trabalho nao tem, e seria a mesma arbitrariedade
     ja recusada na fixacao de limiar.
     """
-    return (d.get("n_nao_coletado", 0) > 0,
+    return (d.get("n_nao_coletado", 0) > 0 or d.get("n_unidade_inexistente", 0) > 0,
             -d.get("n_nao_aplicavel", 0),
             -d.get("n_sinais_ausentes", 0),
             d.get("dominio", ""))
@@ -180,6 +186,8 @@ class CsvTriagem(OutputRenderer):
             # e nao entre os amostrados.
             d["n_nao_coletado"] = sum(1 for v in variaveis
                                       if d.get(v) == NAO_COLETADO)
+            d["n_unidade_inexistente"] = sum(1 for v in variaveis
+                                             if d.get(v) == UNIDADE_INEXISTENTE)
             d["motivo_nao_coleta"] = d.get("motivo_nao_coleta", "")
             d["n_variaveis_apuradas"] = sum(1 for v in variaveis
                                             if d.get(v) in ("true", "false"))
@@ -188,7 +196,7 @@ class CsvTriagem(OutputRenderer):
                                if f"{v}__n_segmentos" in d})
         campos = (["ordem_triagem", "dominio", "n_sinais_ausentes",
                    "n_variaveis_apuradas", "n_nao_aplicavel", "n_nao_coletado",
-                   "motivo_nao_coleta"]
+                   "n_unidade_inexistente", "motivo_nao_coleta"]
                   + variaveis + [f"{v}__confianca" for v in variaveis]
                   + [c for v in com_contagem
                      for c in (f"{v}__n_sentencas", f"{v}__n_segmentos",

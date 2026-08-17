@@ -100,3 +100,39 @@ def test_ordem_e_estavel_em_empate(tmp_path):
         "alfa.br": {"tem_politica_privacidade": False},
     })
     assert [l["dominio"] for l in linhas] == ["alfa.br", "zulu.br"]
+
+
+def test_triagem_separa_inexistente_de_nao_coletado(tmp_path):
+    """Tres responsaveis diferentes: o sitio, o instrumento e o quadro amostral."""
+    import csv
+    from datetime import datetime, timezone
+    from privacyscope.core.plugin_registry import resolve
+    from privacyscope.core.types import (
+        NAO_COLETADO, UNIDADE_INEXISTENTE, VariableResult)
+
+    loja = resolve("result_stores", "sqlite")(db_path=str(tmp_path / "u.sqlite"))
+    loja.begin_run("R", protocol_version="t", sample_size=3)
+    casos = [("medido.br", True, {}),
+             ("bloqueado.br", NAO_COLETADO,
+              {"coletado": False, "motivo": "desafio_anti_bot"}),
+             ("inexistente.br", UNIDADE_INEXISTENTE,
+              {"coletado": False, "motivo": "nome_nao_resolve"})]
+    for host, val, at in casos:
+        loja.upsert(VariableResult(
+            domain_url=f"https://{host}", variable_name="tem_politica_privacidade",
+            value=val, confidence=0.0, audit_trail=at, protocol_version="t",
+            plugin_version="1", run_id="R", timestamp_utc=datetime.now(timezone.utc)))
+    loja.finish_run("R", errors_count=0)
+    alvo = resolve("output_renderers", "csv_triagem")().render(
+        loja, {"path": str(tmp_path / "t.csv"), "run_id": "R"})
+    loja.close()
+    linhas = {l["dominio"]: l for l in csv.DictReader(alvo.open(encoding="utf-8"),
+                                                     delimiter=";")}
+    assert linhas["inexistente.br"]["n_unidade_inexistente"] == "1"
+    assert linhas["inexistente.br"]["n_nao_coletado"] == "0"
+    assert linhas["bloqueado.br"]["n_nao_coletado"] == "1"
+    assert linhas["bloqueado.br"]["n_unidade_inexistente"] == "0"
+    # Ambos sem medicao vao para o fim; o sitio medido encabeca.
+    assert linhas["medido.br"]["ordem_triagem"] == "1"
+    assert {linhas["bloqueado.br"]["ordem_triagem"],
+            linhas["inexistente.br"]["ordem_triagem"]} == {"2", "3"}

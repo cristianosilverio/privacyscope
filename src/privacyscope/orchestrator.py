@@ -34,7 +34,8 @@ from typing import Any, Iterator
 import yaml
 
 from privacyscope.core.plugin_registry import resolve
-from privacyscope.core.types import NAO_APLICAVEL, NAO_COLETADO
+from privacyscope.core.types import (
+    NAO_APLICAVEL, NAO_COLETADO, UNIDADE_INEXISTENTE)
 from privacyscope.fetchers.desafio_antibot import detecta_desafio
 from privacyscope.core.types import Domain, EvidenceRef, RawEvidence
 
@@ -239,13 +240,23 @@ class Orchestrator:
                                    len(desafio["paginas"]), domain.url,
                                    ", ".join(desafio["marcas"]))
                     bloqueados += 1
-                self._analyze_evidence(evidence, run_id)
+                # Evidencia devolvida por melhor esforco: a cadeia declarou-a
+                # insuficiente e a entregou por ser melhor que perder a unidade. Quem
+                # tabula precisa poder separa-la de coleta integra, e a marca so vive
+                # na evidencia — nao chegaria ao resultado sem isto.
+                extra = dict(self._marca_degradada(evidence) or {})
+                extra.update(self._marca_tls(evidence))
+                self._analyze_evidence(evidence, run_id,
+                                       auditoria_extra=extra or None)
             except Exception as exc:
                 logger.error("falha em %s: %s", domain.url, exc, exc_info=False)
                 errors += 1
+                detalhe = {"excecao": type(exc).__name__,
+                           "mensagem": str(exc)[:1000]}
+                detalhe.update(self._le_marca_tls(str(exc)))
                 self._registra_nao_coletado(
                     domain.url, run_id, motivo=self._motivo_da_falha(exc),
-                    detalhe={"excecao": type(exc).__name__, "mensagem": str(exc)[:1000]})
+                    detalhe=detalhe)
         if bloqueados:
             logger.warning("%d de %d dominios tiveram ao menos uma pagina "
                            "bloqueada por desafio anti-bot", bloqueados, len(domains))
@@ -372,7 +383,11 @@ class Orchestrator:
                 if desafio:
                     logger.warning("desafio anti-bot em %d pagina(s) de %s",
                                    len(desafio["paginas"]), entry["domain_url"])
-                self._analyze_evidence(evidence, destino, auditoria_extra=auditoria)
+                extra = dict(auditoria or {})
+                extra.update(self._marca_degradada(evidence) or {})
+                extra.update(self._marca_tls(evidence))
+                self._analyze_evidence(evidence, destino,
+                                       auditoria_extra=extra or None)
             except Exception as exc:
                 logger.error("falha analyze_only em %s: %s", entry["domain_url"], exc)
                 erros += 1
@@ -509,6 +524,47 @@ class Orchestrator:
             self.store.upsert(result)
 
     @staticmethod
+    def _marca_tls(evidence: RawEvidence) -> dict[str, Any]:
+        """Estado do certificado apresentado, quando houve defeito."""
+        import re
+
+        return Orchestrator._le_marca_tls(
+            "\n".join(str(x) for x in (getattr(evidence, "errors", None) or [])))
+
+    @staticmethod
+    def _le_marca_tls(texto: str) -> dict[str, Any]:
+        """Extrai a marca de TLS de qualquer texto — trilha da evidencia ou mensagem
+        de falha. Unidade perdida por outro motivo pode ter tido o certificado
+        inspecionado, e o achado precisa chegar ao registro do mesmo jeito."""
+        import re
+
+        for t in texto.splitlines():
+            if "tls.defeito" not in t:
+                continue
+            t = t[t.index("tls.defeito"):]
+            def campo(nome, padrao=""):
+                m = re.search(rf"{nome}=([^\s]+)", t)
+                return m.group(1).strip("'\"") if m else padrao
+            return {"tls_estado": campo("estado"),
+                    "tls_certificado_de": campo("cn"),
+                    "tls_emissor": campo("emissor")}
+        return {}
+
+    @staticmethod
+    def _marca_degradada(evidence: RawEvidence) -> dict[str, Any] | None:
+        """Trilha extra quando a cadeia devolveu evidencia por melhor esforco."""
+        for linha in (getattr(evidence, "errors", None) or []):
+            if str(linha).startswith("chain.melhor_esforco"):
+                # Chave PROPRIA, e nao `motivo`: os testes textuais ja usam
+                # `motivo` para `politica_outro_idioma`, e a marca de coleta
+                # sobrescreveria um diagnostico de analise com um de coleta. Sao
+                # camadas diferentes e nao disputam o mesmo campo.
+                return {"coleta_degradada": True,
+                        "motivo_coleta": "melhor_esforco",
+                        "chain_melhor_esforco": str(linha)[:400]}
+        return None
+
+    @staticmethod
     def _motivo_da_falha(exc: Exception) -> str:
         """Classifica a falha de coleta em motivo estavel para o registro.
 
@@ -517,8 +573,20 @@ class Orchestrator:
         temporaria. A distincao muda o que se faz no ciclo seguinte.
         """
         nome = type(exc).__name__
+        if nome == "NomeNaoResolveError":
+            return "nome_nao_resolve"
         if nome == "RobotsDisallowedError":
             return "robots_proibe"
+        # Certificado invalido nao e apenas atrito de coleta: transporte sem protecao
+        # adequada e materia do art. 46 da Lei 13.709/2018, e registrar so
+        # "nao coletado" descartaria uma observacao sobre o controlador. Medido em
+        # 17/08/2026: dos vinte diagnosticados, dois casos — `uems.br`, com cadeia de
+        # certificacao incompleta, e `acessorh.com.br`, cujo certificado responde por
+        # outro nome.
+        texto = str(exc).lower()
+        if ("certificate_verify_failed" in texto or "sslcertverification" in texto
+                or "certificate verify failed" in texto):
+            return "tls_invalido"
         if "Navigation" in nome or "Timeout" in nome or "timeout" in str(exc).lower():
             return "coleta_expirou"
         if "AmbienteIncompleto" in nome:
@@ -553,13 +621,22 @@ class Orchestrator:
     def _resultado_nao_coletado(self, test, domain_url: str, run_id: str, *,
                                 motivo: str, detalhe: dict[str, Any],
                                 sufixo: str = ""):
-        """Constroi o resultado indeterminado de UMA variavel."""
+        """Constroi o resultado indeterminado de UMA variavel.
+
+        Nome que nao resolve produz estado PROPRIO. `nao_coletado` diz que o
+        instrumento nao obteve o objeto; `unidade_inexistente` diz que o objeto nao
+        existe no endereco declarado, o que e defeito do quadro amostral e nenhum
+        coletor corrige. Somar os dois na taxa de alcance esconderia qual dos dois
+        se esta medindo.
+        """
         from privacyscope.core.types import VariableResult
 
+        valor = (UNIDADE_INEXISTENTE if motivo == "nome_nao_resolve"
+                 else NAO_COLETADO)
         return VariableResult(
             domain_url=domain_url,
             variable_name=f"{test.variable_name}{sufixo}",
-            value=NAO_COLETADO,
+            value=valor,
             # Confianca zero: nao ha medicao sobre a qual ter confianca. O campo nao e
             # "certeza de que houve bloqueio", e sim confianca do veredito.
             confidence=0.0,

@@ -33,6 +33,12 @@ ESCALARES = (
     "n_sentencas_sinalizadas", "n_segmentos_avaliados", "limiar",
     "cobertura_vocabulario", "extrapolacao", "motivo",
     "modelo_sha256", "preparo_versao", "extrator_versao", "corpo_sha256",
+    # Coleta que a cadeia declarou insuficiente e devolveu assim mesmo, por ser
+    # melhor que perder a unidade. Sem coluna, a distincao ficaria so no tar.gz.
+    "coleta_degradada", "motivo_coleta",
+    # Condicao do transporte. O arcabouco registra o que foi apresentado;
+    # a valoracao da evidencia e de quem a examina.
+    "tls_estado", "tls_certificado_de", "tls_emissor",
 )
 
 COLUNAS_BASE = ("domain_url", "variable_name", "value", "confidence",
