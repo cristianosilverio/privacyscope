@@ -147,3 +147,25 @@ def test_readme_nao_afirma_manifesto_assinado():
     for frase in re.findall(r"[^.]*assinad[^.]*\.", doc):
         assert "não assinado" in frase or "nao assinado" in frase, (
             f"afirmacao de assinatura sem lastro no codigo: {frase.strip()!r}")
+
+
+# Registros de coletas ja realizadas: o hash do arquivo consta da evidencia guardada,
+# e altera-los quebraria a correspondencia sem beneficio — nao serao recoletados.
+PROTOCOLOS_HISTORICOS = {"b4", "b7", "b7_T1", "b7_gov_supp", "b7_recollect", "b9",
+                         "b9_validacao", "prepilot"}
+
+
+@pytest.mark.parametrize("p", [x for x in PROTOCOLOS
+                               if x.stem not in PROTOCOLOS_HISTORICOS],
+                         ids=lambda p: p.stem)
+def test_cadeia_nao_escala_em_nome_que_nao_resolve(p):
+    """Escalar em nome que nao resolve custa 15 segundos por unidade e apaga a
+    distincao entre defeito do quadro amostral e falha de coleta: a excecao original
+    e substituida por FetchError generico, e `unidade_inexistente` nunca aparece."""
+    d = carrega(p)
+    f = d.get("fetcher") or {}
+    if f.get("name") != "fallback_chain":
+        return
+    nomes = {c.get("exception") for c in (f.get("params", {}).get("abort_on") or [])}
+    assert "NomeNaoResolveError" in nomes, (
+        f"{p.name} declara fallback_chain sem abortar em NomeNaoResolveError")

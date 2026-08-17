@@ -92,6 +92,9 @@ fetcher:
         # último na cadeia — sem escalate_if
     abort_on:
       - exception: RobotsDisallowedError
+      # Nome que nao resolve nao melhora com outro coletor, e escalar apaga a
+      # distincao entre defeito do quadro amostral e falha de coleta.
+      - exception: NomeNaoResolveError
 
 # -----------------------------------------------------------------------------
 # Análise (camada 4) — 3 VariableTests determinísticos do MVP

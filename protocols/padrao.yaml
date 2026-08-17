@@ -79,6 +79,13 @@ fetcher:
     max_retries_per_fetcher: 0
     abort_on:
     - exception: RobotsDisallowedError
+    # Nome que nao resolve nao melhora com outro coletor: medido em 17/08/2026, o
+    # Playwright devolveu ERR_NAME_NOT_RESOLVED nos mesmos cinco casos em que o
+    # coletor por requisicao simples ja havia concluido o mesmo. Escalar custava 15
+    # segundos por unidade e, pior, substituia NomeNaoResolveError por FetchError
+    # generico — o que apagava a distincao entre defeito do quadro amostral e falha
+    # de coleta, e impedia o estado `unidade_inexistente` de existir.
+    - exception: NomeNaoResolveError
 tests:
 - name: banner_cookies
   rules_file: config/rules/banner_cookies.yaml
