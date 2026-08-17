@@ -371,98 +371,13 @@ class FallbackChain(PageFetcher):
     # ------------------------------------------------------------------
     # ORQUESTRAÇÃO PRINCIPAL — fetch()
     # ------------------------------------------------------------------
-    @staticmethod
-    def _enrich_with_tls(evidence: RawEvidence) -> RawEvidence:
-        """Registra o certificado apresentado, seja qual for o coletor que venceu.
-
-        O PlaywrightFetcher ignora erros de TLS por padrao e nao registrava nada; o
-        coletor por requisicao simples validava e desistia. Coletar ou nao dependia de
-        qual dos dois vencia, e o registro nao dizia coisa alguma. Medido em
-        17/08/2026: 8 de 203 coletas de b7 e 37 de 506 de b9 tinham defeito de
-        certificado no dia da medicao, nenhuma delas marcada.
-
-        Registrar aqui, e nao em cada coletor, e o que torna os dois equivalentes.
-        Nao repete a inspecao quando o coletor ja a fez.
-        """
-        if any(str(e).startswith("tls.") for e in (evidence.errors or [])):
-            return evidence
-        from urllib.parse import urlsplit
-
-        from privacyscope.fetchers._tls import inspeciona, marca
-
-        # O host EFETIVO, e nao o nome declarado. Quando a coleta veio da variante
-        # `www.`, o nome declarado costuma nem resolver — inspeciona-lo devolveria
-        # `indeterminado` para toda coleta recuperada, que foi o que aconteceu na
-        # execucao 798449dd.
-        efetivo = next(iter(evidence.headers or {}), "") or str(evidence.domain.url)
-        host = urlsplit(efetivo).hostname or urlsplit(str(evidence.domain.url)).hostname
-        if not host:
-            return evidence
-        try:
-            info = inspeciona(host)
-        except Exception:                                       # noqa: BLE001
-            return evidence
-        # `indeterminado` significa que a inspecao nao concluiu — hospedeiro fora do
-        # ar no momento da conferencia, por exemplo. Marcar isso poluiria o registro
-        # de coleta cujo certificado esta em ordem.
-        if info.get("estado") in (None, "valido", "indeterminado"):
-            return evidence
-        return evidence.model_copy(
-            update={"errors": list(evidence.errors) + [marca(info)]})
-
-    async def _devolve_acumulada(
-        self,
-        evidencia: RawEvidence,
-        fetcher: str | None,
-        motivo: str | None,
-        chain_audit: list[str],
-        desfecho: str,
-    ) -> RawEvidence:
-        """Devolve a evidencia acumulada, MARCADA como coleta degradada.
-
-        Evidencia que casou `escalate_if` foi declarada insuficiente pelo protocolo.
-        Devolve-la e melhor que perder a unidade — sitio que entrega evidencia parcial
-        e sitio que nao entrega nada nao sao a mesma coisa, e ate aqui o resultado era
-        identico para os dois. Mas devolve-la EM SILENCIO trocaria um erro por outro.
-
-        A marca e obrigatoria e viaja com a evidencia: quem tabula consegue separar
-        coleta integra de coleta degradada, e excluir a segunda se o uso exigir.
-        """
-        marca = (f"chain.melhor_esforco fetcher={fetcher} "
-                 f"escalonamento_nao_satisfeito={motivo} desfecho={desfecho}")
-        chain_audit.append(marca)
-        logger.warning("FallbackChain devolve evidencia de %s como melhor esforco: "
-                       "%s (%s)", fetcher, motivo, desfecho)
-        evidencia = await self._enrich_with_pdfs(evidencia, chain_audit)
-        evidencia = self._enrich_with_tls(evidencia)
-        return self._enrich_with_audit(evidencia, chain_audit)
-
     async def fetch(self, domain: Domain, params: dict[str, Any]) -> RawEvidence:
         """Itera pela cadeia, escalando conforme sinais. Levanta ou devolve."""
         cfg = self._validate_params(params)
         chain_audit: list[str] = [
             f"chain.start fetchers={[fe['name'] for fe in cfg['fetchers']]}"
         ]
-        # ACUMULADOR DE EVIDENCIA
-        # -----------------------
-        # A cadeia guarda a melhor evidencia obtida ate aqui e SO a substitui quando
-        # a camada seguinte tambem produz evidencia. Camada que falha nao apaga o que
-        # a anterior conseguiu.
-        #
-        # Antes desta mudanca, evidencia insatisfatoria era guardada em
-        # `last_evidence_unsat` e descartada em tres pontos: ao levantar por falha do
-        # coletor seguinte, ao zerar o acumulador quando um coletor intermediario
-        # levantava excecao, e ao esgotar a cadeia. Medido no diagnostico de
-        # 16/08/2026: cinco de vinte unidades tinham a raiz coletada pelo
-        # `http_simples` — duas delas pela queda para `www.` — e terminaram como perda
-        # total, porque o Playwright falhou depois de um escalonamento por sinal.
-        #
-        # A substituicao e por EXISTENCIA, e nao por qualidade. Comparar qualidade
-        # exigiria metrica que o arcabouco nao tem, e arbitra-la seria decidir por
-        # criterio nao declarado.
-        melhor_evidencia: RawEvidence | None = None
-        melhor_fetcher: str | None = None
-        melhor_motivo: str | None = None
+        last_evidence_unsat: RawEvidence | None = None
         last_exception: BaseException | None = None
 
         for i, fetcher_entry in enumerate(cfg["fetchers"]):
@@ -502,14 +417,11 @@ class FallbackChain(PageFetcher):
                 if not should_escalate:
                     chain_audit.append(f"chain.success[{i}] fetcher={fname}")
                     evidence = await self._enrich_with_pdfs(evidence, chain_audit)
-                    evidence = self._enrich_with_tls(evidence)
                     return self._enrich_with_audit(evidence, chain_audit)
                 chain_audit.append(
                     f"chain.escalate[{i}->{i+1}] from={fname} reason={escalate_reason}"
                 )
-                melhor_evidencia = evidence
-                melhor_fetcher = fname
-                melhor_motivo = escalate_reason
+                last_evidence_unsat = evidence
                 last_exception = None
                 continue
 
@@ -522,10 +434,6 @@ class FallbackChain(PageFetcher):
                     f"chain.fail[{i}] fetcher={fname} "
                     f"exception={type(exception).__name__} no_escalation_match"
                 )
-                if melhor_evidencia is not None:
-                    return await self._devolve_acumulada(
-                        melhor_evidencia, melhor_fetcher, melhor_motivo, chain_audit,
-                        f"{fname} levantou {type(exception).__name__}")
                 raise FetchError(
                     f"FallbackChain falhou em {fname} sem condição de escalonamento "
                     f"casando: {type(exception).__name__}: {exception}. "
@@ -534,15 +442,16 @@ class FallbackChain(PageFetcher):
             chain_audit.append(
                 f"chain.escalate[{i}->{i+1}] from={fname} reason={escalate_reason}"
             )
-            # O acumulador NAO e zerado: coletor que falha nao apaga o que o anterior
-            # conseguiu. Era aqui a terceira via de perda.
+            last_evidence_unsat = None
             last_exception = exception
 
         # ====== Cadeia exaurida ======
-        if melhor_evidencia is not None:
-            return await self._devolve_acumulada(
-                melhor_evidencia, melhor_fetcher, melhor_motivo, chain_audit,
-                "cadeia exaurida sem coletor que satisfizesse as condicoes")
+        if last_evidence_unsat is not None:
+            chain_audit.append("chain.exhausted last_evidence_matched_escalate_if")
+            raise FetchError(
+                f"FallbackChain exauriu — último fetcher produziu evidência mas "
+                f"matchou escalate_if dele. Audit: {chain_audit}"
+            )
         chain_audit.append("chain.exhausted no_evidence")
         if last_exception is not None:
             raise FetchError(
