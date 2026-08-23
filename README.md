@@ -84,6 +84,24 @@ Os dois estados são distintos de propósito: fundi-los faria um sítio nunca al
 
 Na saída de triagem, a ordenação por não conformidade é lexicográfica e ancorada no grafo de dependências, e não na soma de sinais ausentes — somar `false` faria o sítio *sem* política ficar abaixo do sítio *com* política que falha nas textuais, porque a dependência tira três variáveis da contagem do primeiro. Nenhum peso por gravidade é arbitrado.
 
+## Limiar de contagem na decisão por sítio
+
+As três variáveis textuais são decididas **sentença a sentença**; o que sai por sítio é outra coisa. Quantas sentenças sinalizadas bastam para dar o sítio por portador da declaração é o **limiar de contagem**, declarado em `limiar_contagem` no protocolo, com padrão **2**.
+
+O valor não é indiferente, e converter a lista em booleano — o equivalente a fixá-lo em 1 — é a pior escolha disponível. A classe de interesse do arcabouço é a **ausência** do sinal, porque o produto útil é reduzir o conjunto que exige exame humano. Um falso positivo de presença é, do ponto de vista dessa classe, um falso negativo: o sítio que não divulga, mas em que uma única sentença foi sinalizada por engano, sai da fila e não é examinado.
+
+Medido sobre 126 sítios com política em texto, com rótulo por sítio e externos ao conjunto de treino (`scripts/limiar_contagem_sitio.py`):
+
+| variável | revocação da ausência em c=1 | em c=2 | custo em precisão |
+|---|---:|---:|---:|
+| direitos do titular | 65,7% | **91,4%** | −3,6 p.p. |
+| transferência internacional | 42,9% | **75,8%** | −3,3 p.p. |
+| finalidade especificada | 0,0% | 0,0% | — |
+
+Nas duas primeiras o coeficiente de Matthews é máximo em 2. **Finalidade não responde a limiar algum**, e a causa está no corpo de treino: quatorze das quinze políticas anotadas declaram finalidade, de modo que o classificador nunca viu uma política sem essa declaração e não dispõe de base para produzir ausência de sinalização. Nos sítios que de fato não declaram, a mediana é de 27 sentenças sinalizadas. A saída por sítio dessa variável não serve a indicador; o que dela se aproveita é a lista de sentenças, que dirige a leitura humana ao trecho.
+
+Escolher o ponto de operação continua sendo de quem conduz a triagem, uma vez que fixa a razão entre esforço de verificação e cobertura — por isso o valor é parâmetro, e não constante. O padrão é 2 porque conservar 1 seria manter o único valor examinado que anula a discriminação onde ela existe. O teto comparativo por representação densa adota o mesmo limiar: distinto entre os dois, a comparação por sítio seria incomparável.
+
 ## Cadeia de custódia
 
 Cada conjunto de evidências (HTML, cookies, headers, screenshot, metadados) é empacotado em `tar.gz`, recebe hash SHA-256 e é registrado em `manifest.jsonl`. A cada escrita, o hash do próprio manifesto é gravado em `audit_log.jsonl` — o manifesto é **encadeado por hash**, e não assinado. `privacyscope verify-manifest` recomputa a cascata e reporta divergência.
