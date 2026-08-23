@@ -1,0 +1,43 @@
+variavel;conjunto;limiar;n;divulgam;nao_divulgam;VP;FP;FN;VN;revocacao_ausencia;rev_ic_inf;rev_ic_sup;precisao_ausencia;prec_ic_inf;prec_ic_sup;matthews;tamanho_da_fila;run_id
+finalidade_especificada;fora do treino;1;126;107;19;107;19;0;0;0.0;0.0;0.1682;;;;0.0;0;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;fora do treino;2;126;107;19;107;19;0;0;0.0;0.0;0.1682;;;;0.0;0;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;fora do treino;3;126;107;19;106;18;1;1;0.0526;0.0094;0.2464;0.5;0.0945;0.9055;0.1239;2;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;fora do treino;4;126;107;19;103;18;4;1;0.0526;0.0094;0.2464;0.2;0.0362;0.6245;0.028;5;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;fora do treino;5;126;107;19;103;18;4;1;0.0526;0.0094;0.2464;0.2;0.0362;0.6245;0.028;5;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;fora do treino;7;126;107;19;102;18;5;1;0.0526;0.0094;0.2464;0.1667;0.0301;0.5635;0.0099;6;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;fora do treino;10;126;107;19;95;15;12;4;0.2105;0.0851;0.4333;0.25;0.1018;0.495;0.1057;16;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;no treino;1;15;14;1;14;1;0;0;0.0;0.0;0.7935;;;;0.0;0;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;no treino;2;15;14;1;14;1;0;0;0.0;0.0;0.7935;;;;0.0;0;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;no treino;3;15;14;1;14;1;0;0;0.0;0.0;0.7935;;;;0.0;0;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;no treino;4;15;14;1;13;1;1;0;0.0;0.0;0.7935;0.0;0.0;0.7935;-0.0714;1;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;no treino;5;15;14;1;13;1;1;0;0.0;0.0;0.7935;0.0;0.0;0.7935;-0.0714;1;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;no treino;7;15;14;1;12;0;2;1;1.0;0.2065;1.0;0.3333;0.0615;0.7923;0.5345;3;54b7aaf1-bc37-4279-b5e0-333ed3801169
+finalidade_especificada;no treino;10;15;14;1;12;0;2;1;1.0;0.2065;1.0;0.3333;0.0615;0.7923;0.5345;3;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;fora do treino;1;126;91;35;80;12;11;23;0.6571;0.4915;0.7917;0.6765;0.5084;0.8087;0.5411;34;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;fora do treino;2;126;91;35;73;3;18;32;0.9143;0.7762;0.9704;0.64;0.5014;0.7586;0.6559;50;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;fora do treino;3;126;91;35;69;2;22;33;0.9429;0.8139;0.9842;0.6;0.4681;0.7188;0.6332;55;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;fora do treino;4;126;91;35;65;1;26;34;0.9714;0.8547;0.9949;0.5667;0.441;0.6843;0.615;60;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;fora do treino;5;126;91;35;57;1;34;34;0.9714;0.8547;0.9949;0.5;0.3844;0.6156;0.5372;68;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;fora do treino;7;126;91;35;48;1;43;34;0.9714;0.8547;0.9949;0.4416;0.3361;0.5526;0.4584;77;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;fora do treino;10;126;91;35;24;0;67;35;1.0;0.9011;1.0;0.3431;0.2582;0.4395;0.3008;102;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;no treino;1;15;11;4;11;2;0;2;0.5;0.15;0.85;1.0;0.3424;1.0;0.6504;2;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;no treino;2;15;11;4;11;2;0;2;0.5;0.15;0.85;1.0;0.3424;1.0;0.6504;2;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;no treino;3;15;11;4;10;0;1;4;1.0;0.5101;1.0;0.8;0.3755;0.9638;0.8528;5;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;no treino;4;15;11;4;10;0;1;4;1.0;0.5101;1.0;0.8;0.3755;0.9638;0.8528;5;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;no treino;5;15;11;4;9;0;2;4;1.0;0.5101;1.0;0.6667;0.3;0.9032;0.7385;6;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;no treino;7;15;11;4;9;0;2;4;1.0;0.5101;1.0;0.6667;0.3;0.9032;0.7385;6;54b7aaf1-bc37-4279-b5e0-333ed3801169
+direitos_titular_explicados;no treino;10;15;11;4;6;0;5;4;1.0;0.5101;1.0;0.4444;0.1888;0.7334;0.4924;9;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;fora do treino;1;126;35;91;32;52;3;39;0.4286;0.3318;0.5311;0.9286;0.8099;0.9754;0.3258;42;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;fora do treino;2;126;35;91;27;22;8;69;0.7582;0.661;0.8346;0.8961;0.8082;0.9464;0.4867;77;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;fora do treino;3;126;35;91;22;13;13;78;0.8571;0.7708;0.9146;0.8571;0.7708;0.9146;0.4857;91;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;fora do treino;4;126;35;91;15;9;20;82;0.9011;0.8226;0.9471;0.8039;0.7165;0.8693;0.376;102;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;fora do treino;5;126;35;91;10;4;25;87;0.956;0.8924;0.9828;0.7768;0.6912;0.844;0.3446;112;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;fora do treino;7;126;35;91;6;1;29;90;0.989;0.9403;0.9981;0.7563;0.6719;0.8246;0.3137;119;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;fora do treino;10;126;35;91;3;0;32;91;1.0;0.9595;1.0;0.7398;0.6559;0.8093;0.2518;123;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;no treino;1;15;8;7;8;3;0;4;0.5714;0.2505;0.8418;1.0;0.5101;1.0;0.6447;4;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;no treino;2;15;8;7;8;2;0;5;0.7143;0.3589;0.9178;1.0;0.5655;1.0;0.7559;5;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;no treino;3;15;8;7;5;2;3;5;0.7143;0.3589;0.9178;0.625;0.3057;0.8632;0.3393;8;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;no treino;4;15;8;7;5;1;3;6;0.8571;0.4869;0.9743;0.6667;0.3542;0.8794;0.491;9;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;no treino;5;15;8;7;3;1;5;6;0.8571;0.4869;0.9743;0.5455;0.2801;0.7873;0.2619;11;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;no treino;7;15;8;7;1;0;7;7;1.0;0.6457;1.0;0.5;0.268;0.732;0.25;14;54b7aaf1-bc37-4279-b5e0-333ed3801169
+transf_internacional_divulgada;no treino;10;15;8;7;1;0;7;7;1.0;0.6457;1.0;0.5;0.268;0.732;0.25;14;54b7aaf1-bc37-4279-b5e0-333ed3801169
