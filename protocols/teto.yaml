@@ -99,24 +99,28 @@ tests:
 - name: finalidade_especificada
   params:
     modelo_file: models/textuais-finalidade-v1.0.0.npz
+    limiar_contagem: 2
     modelo_sha256: cf474b9bf6133dc374e0f0720835da6b8e669a67f3008ae4f970a27db96ae0c0
     depende_de:
     - tem_politica_privacidade
 - name: direitos_titular_explicados
   params:
     modelo_file: models/textuais-direitos_titular-v1.0.0.npz
+    limiar_contagem: 2
     modelo_sha256: a2912290b9911114715a7dd0ea2170bea5e349db39b92b12a6e9c12e84f91a01
     depende_de:
     - tem_politica_privacidade
 - name: transf_internacional_divulgada
   params:
     modelo_file: models/textuais-transf_internacional-v1.0.0.npz
+    limiar_contagem: 2
     modelo_sha256: ba65b01f76606776b220befc40de2025341f4326ab79e1658bcb3049016c7dff
     depende_de:
     - tem_politica_privacidade
 - name: finalidade_especificada_densa
   params:
     modelo_file: models/denso-finalidade-v1.0.0.npz
+    limiar_contagem: 2
     modelo_sha256: DECLARE_APOS_EXPORTAR
     codificador_dir: DECLARE_O_CAMINHO_LOCAL
     variavel_sufixo: __denso
@@ -125,6 +129,7 @@ tests:
 - name: direitos_titular_explicados_densa
   params:
     modelo_file: models/denso-direitos_titular-v1.0.0.npz
+    limiar_contagem: 2
     modelo_sha256: DECLARE_APOS_EXPORTAR
     codificador_dir: DECLARE_O_CAMINHO_LOCAL
     variavel_sufixo: __denso
@@ -133,6 +138,7 @@ tests:
 - name: transf_internacional_divulgada_densa
   params:
     modelo_file: models/denso-transf_internacional-v1.0.0.npz
+    limiar_contagem: 2
     modelo_sha256: DECLARE_APOS_EXPORTAR
     codificador_dir: DECLARE_O_CAMINHO_LOCAL
     variavel_sufixo: __denso

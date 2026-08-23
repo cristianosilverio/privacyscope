@@ -16,20 +16,37 @@ CLASSIFICACAO POR SENTENCA, SAIDA POR SITIO
 O classificador decide SENTENCA a sentenca. O que o arcabouco devolve por sitio e
 outra coisa, e o contrato foi fixado assim:
 
-    value          presenca de ao menos uma sentenca sinalizada
+    value          contagem de sentencas sinalizadas atinge o limiar de contagem
     confidence     maior probabilidade entre as sinalizadas
-    audit_trail    contagem, denominador, limiar, as sentencas de maior escore,
-                   identidade do artefato, versao do preparo e cobertura
+    audit_trail    contagem, denominador, limiar de contagem, limiar do artefato, as
+                   sentencas de maior escore, identidade do artefato, versao do
+                   preparo e cobertura
 
-A leitura binaria e a agregacao trivial da contagem — pô-la em `value` contrariaria
-o tipo declarado no protocolo sem acrescentar informacao, uma vez que a contagem
-permanece disponivel. O denominador acompanha porque contagem bruta nao e comparavel
-entre sitios: politica de tres mil segmentos e outra de cem, ambas com cinco
-sentencas sinalizadas, nao dizem a mesma coisa.
+O LIMIAR DE CONTAGEM
+--------------------
+Quantas sentencas sinalizadas bastam para que o sitio seja tido por portador da
+declaracao. A conversao direta de lista em booleano equivale a fixa-lo em um, e esse
+valor nao decorre de evidencia: decorre da conversao.
 
-O arcabouco nao arbitra o que cinco sentencas significam em lugar de uma. Ele
-relata, e a decisao fica com quem consome — que e o que preserva a distincao entre
-evidencia tecnica observavel e juizo de conformidade.
+Ele nao e indiferente. A classe de interesse do arcabouco e a AUSENCIA do sinal,
+porque o produto util e a reducao do conjunto que exige exame humano. Um falso
+positivo de presenca e, do ponto de vista dessa classe, um falso negativo: o sitio
+que nao divulga, mas em que uma unica sentenca foi sinalizada por engano, deixa a
+fila. Quanto menor o limiar, mais isso ocorre.
+
+Medido sobre 126 sitios com politica em texto e rotulo por sitio, externos ao
+conjunto de treino (scripts/limiar_contagem_sitio.py): em direitos do titular o
+limiar dois eleva a revocacao da ausencia de 65,7% para 91,4% com queda de 3,6
+pontos de precisao; em transferencia internacional, de 42,9% para 75,8% com queda de
+3,3 pontos. Em ambas o coeficiente de Matthews e maximo em dois. Dai o padrao.
+
+A escolha do ponto de operacao continua sendo de quem conduz a triagem, e por isso o
+valor e parametro do protocolo. O que o arcabouco nao faz e conservar como padrao o
+unico valor examinado que anula a discriminacao.
+
+O denominador acompanha porque contagem bruta nao e comparavel entre sitios:
+politica de tres mil segmentos e outra de cem, ambas com cinco sentencas
+sinalizadas, nao dizem a mesma coisa.
 
 MATERIAL SUBMETIDO
 ------------------
@@ -69,6 +86,7 @@ logger = logging.getLogger(__name__)
 
 PAGINAS_EXCLUIDAS = frozenset({"/", "/__pre_consent"})
 N_SENTENCAS_PADRAO = 10      # teto de sentencas gravadas no registro de auditoria
+LIMIAR_CONTAGEM_PADRAO = 2   # sentencas sinalizadas exigidas para o sitio ser positivo
 
 
 class MLTextoTest(VariableTest):
@@ -141,6 +159,11 @@ class MLTextoTest(VariableTest):
 
         artefato = self._artefato(params)
         teto = int(params.get("n_sentencas_auditoria", N_SENTENCAS_PADRAO))
+        limiar_contagem = int(params.get("limiar_contagem", LIMIAR_CONTAGEM_PADRAO))
+        if limiar_contagem < 1:
+            raise ValueError(
+                f"{self.name}: `limiar_contagem` vale {limiar_contagem}; exige-se ao "
+                f"menos uma sentenca sinalizada para afirmar presenca.")
         # Sufixo declarado no protocolo, para quando dois regimes da mesma variavel
         # convivem no mesmo run. A camada de resultados tem chave unica por nome, e
         # sem o sufixo um sobrescreveria o outro em silencio.
@@ -159,6 +182,7 @@ class MLTextoTest(VariableTest):
             "metodos_pdf": metodos_pdf,
             "subpaginas_outro_idioma": list(preparo.subpaginas_removidas),
             "preparo_parametros": dict(preparo.parametros),
+            "limiar_contagem": limiar_contagem,
         }
 
         if not segmentos:
@@ -195,7 +219,7 @@ class MLTextoTest(VariableTest):
         if len(indices) > teto:
             trilha["sentencas_omitidas"] = len(indices) - teto
 
-        valor = bool(indices)
+        valor = len(indices) >= limiar_contagem
         confianca = float(prob[indices[0]]) if indices else float(prob.max())
         return self._resultado(evidence, valor, confianca, trilha, sufixo,
                                protocol_version, run_id, datetime.now(timezone.utc))

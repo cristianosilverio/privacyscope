@@ -43,7 +43,8 @@ from typing import Any, ClassVar
 from privacyscope.core.interfaces import VariableTest
 from privacyscope.core.types import RawEvidence, VariableResult
 from privacyscope.models.artefato import ArtefatoDenso, le_denso
-from privacyscope.tests.ml_texto import MLTextoTest, N_SENTENCAS_PADRAO
+from privacyscope.tests.ml_texto import (LIMIAR_CONTAGEM_PADRAO, MLTextoTest,
+                                          N_SENTENCAS_PADRAO)
 from privacyscope.text.segmentacao import segmenta
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,9 @@ class BertimbauTest(VariableTest):
 
         artefato = self._artefato(params)
         teto = int(params.get("n_sentencas_auditoria", N_SENTENCAS_PADRAO))
+        # O teto so e teto se agregar como o mecanismo que ele mede. Limiar de
+        # contagem distinto entre os dois tornaria a comparacao por sitio incomparavel.
+        limiar_contagem = int(params.get("limiar_contagem", LIMIAR_CONTAGEM_PADRAO))
         sufixo = params.get("variavel_sufixo", "")
 
         preparo = segmenta(MLTextoTest._paginas(evidence),
@@ -152,6 +156,7 @@ class BertimbauTest(VariableTest):
             **artefato.descricao(),
             "n_segmentos_avaliados": len(segmentos),
             "subpaginas_outro_idioma": list(preparo.subpaginas_removidas),
+            "limiar_contagem": limiar_contagem,
             "teto_comparativo": True,
         }
         agora = datetime.now(timezone.utc)
@@ -175,7 +180,7 @@ class BertimbauTest(VariableTest):
         if len(indices) > teto:
             trilha["sentencas_omitidas"] = len(indices) - teto
         confianca = float(prob[indices[0]]) if indices else float(prob.max())
-        return self._resultado(evidence, bool(indices), confianca, trilha, sufixo,
+        return self._resultado(evidence, len(indices) >= limiar_contagem, confianca, trilha, sufixo,
                                protocol_version, run_id, agora)
 
     def _resultado(self, evidence, valor, confianca, trilha, sufixo,
