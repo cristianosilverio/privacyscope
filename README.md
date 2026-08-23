@@ -37,6 +37,7 @@ playwright install chromium
 privacyscope run       protocols/padrao.yaml            # coleta + análise + saídas
 privacyscope analyze   protocols/padrao.yaml --run-id <uuid> [--nova-execucao]
 privacyscope render    protocols/padrao.yaml            # regera saídas, sem recoletar
+privacyscope verify-manifest protocols/padrao.yaml
 privacyscope list-plugins
 ```
 
@@ -52,7 +53,7 @@ Toda execução é governada por um protocolo em `protocols/`, e é ele que decl
 
 | Variável | Detecção | Depende de |
 |---|---|---|
-| `tem_banner_cookies` | regra: seletor CSS + léxico | — |
+| `tem_banner_cookies` | regra: expressão regular sobre `id` e `class` + léxico, com filtro de visibilidade | — |
 | `tem_politica_privacidade` | regra: padrões no DOM e em hrefs | — |
 | `tem_canal_titular` | regressão logística penalizada sobre oito atributos estruturais | — |
 | `finalidade_especificada` | TF-IDF + regressão logística, no nível da sentença | `tem_politica_privacidade` |
@@ -67,7 +68,7 @@ Detalhamento em `protocols/padrao.yaml` e `docs/arquitetura.md`.
 
 ## Estados de uma medição
 
-O resultado de uma variável **não é booleano**. Reduzi-lo a verdadeiro/falso enviesa o indicador exatamente na direção que a etapa de Monitoramento quer medir. São quatro estados:
+O resultado de uma variável **não é booleano**. Reduzi-lo a verdadeiro/falso enviesa o indicador exatamente na direção que a etapa de Monitoramento quer medir. São cinco estados:
 
 | estado | significa | fala sobre |
 |---|---|---|
@@ -75,12 +76,15 @@ O resultado de uma variável **não é booleano**. Reduzi-lo a verdadeiro/falso 
 | `false` | o sinal foi medido e está ausente | o sítio |
 | `nao_aplicavel` | a precondição declarada não se verificou | o sítio |
 | `nao_coletado` | o instrumento não obteve o objeto da medição | o instrumento |
+| `unidade_inexistente` | o endereço declarado não designa hospedeiro algum | o quadro amostral |
 
 **`nao_aplicavel`** decorre da dependência declarada no protocolo. Finalidade, direitos do titular e transferência internacional são declarações *dentro* da política de privacidade; aplicá-las a um sítio sem política submeteria a um classificador de políticas um material que não é política. O resultado disso não é ausência de divulgação — é medição indevida. Sobre 506 sítios, 46% não tinham política detectada, e neles a variável de finalidade ainda saía positiva em 21,8% dos casos.
 
 **`nao_coletado`** cobre a unidade que falhou na coleta e a página que o servidor de origem recusou entregar. Antes de existir, o domínio que falhava simplesmente sumia das saídas — saía do numerador e do denominador ao mesmo tempo, e qualquer proporção passava a medir prevalência entre os alcançados, e não entre os amostrados. Taxa de alcance é parte do resultado.
 
-Os dois estados são distintos de propósito: fundi-los faria um sítio nunca alcançado aparecer como sítio sem política.
+**`unidade_inexistente`** separa o defeito do quadro amostral do defeito da coleta. A lista de popularidade entrega domínios registráveis, e a atividade de levantamento requer pontos de entrada de sítio; quando o nome não resolve em variante determinística alguma, o que falhou foi o quadro, e não o instrumento nem o sítio.
+
+Os três estados de não medição são distintos de propósito: fundi-los faria um sítio nunca alcançado aparecer como sítio sem política, e faria endereço que não designa hospedeiro aparecer como sítio fora do ar.
 
 Na saída de triagem, a ordenação por não conformidade é lexicográfica e ancorada no grafo de dependências, e não na soma de sinais ausentes — somar `false` faria o sítio *sem* política ficar abaixo do sítio *com* política que falha nas textuais, porque a dependência tira três variáveis da contagem do primeiro. Nenhum peso por gravidade é arbitrado.
 
@@ -110,7 +114,7 @@ A distinção importa. Encadeamento por hash detecta adulteração de qualquer p
 
 ## Reprodutibilidade
 
-Toda execução é governada por `config/protocol.yaml`, versionado e identificado por hash SHA-256 (`protocol_version`). Mesmo input + mesmo protocolo → mesmo output. A camada de Evidência Bruta é imutável (append-only) — múltiplas análises podem ser aplicadas sobre o mesmo conjunto preservado.
+Toda execução é governada por um protocolo em `protocols/`, versionado e identificado por hash SHA-256 (`protocol_version`). Mesmo input + mesmo protocolo → mesmo output. A camada de Evidência Bruta é imutável (append-only) — múltiplas análises podem ser aplicadas sobre o mesmo conjunto preservado.
 
 ## Limitações
 
@@ -121,21 +125,22 @@ O framework analisa apenas evidências observáveis em ambientes digitais públi
 ```
 privacyscope/
 ├── config/
-│   ├── protocol.yaml
-│   ├── thresholds.yaml
-│   └── rules/
+│   ├── protocol.yaml    # esquema obsoleto, não executa
+│   └── rules/           # léxicos e limiares externalizados
+├── protocols/           # protocolos executáveis, um por execução
+├── models/              # artefatos de modelo (.npz), versionados
 ├── src/privacyscope/
-│   ├── core/            # ABCs + tipos (Domain, RawEvidence, VariableResult)
-│   ├── sources/         # TrancoSource, GovBrSource, CsvSource
+│   ├── core/            # ABCs, tipos e registro de plugins
+│   ├── sources/         # TrancoSource, CsvSource, CoorteReexameSource
 │   ├── fetchers/        # HttpFetcher, PlaywrightFetcher, FallbackChain
-│   ├── storage/         # FileSystemRepository, SQLiteStore
-│   ├── tests/           # StructuralTest, LexiconTest, MLClassifierTest, CookieAnalyzer
-│   ├── outputs/         # CsvExport, ParquetExport, MarkdownReport, DashboardJsonExport
+│   ├── storage/         # FileSystemRepository, SQLiteResultStore
+│   ├── tests/           # detectores por regra e classificadores supervisionados
+│   ├── outputs/         # CsvLongo, CsvTriagem, CsvEvidencias, ParquetLongo, JsonEvidencia
 │   ├── orchestrator.py
 │   └── cli.py
 ├── data/                # gitignored (dados de execução)
-├── docs/                # arquitetura, figuras
-├── notebooks/           # análise exploratória, figuras do TCC
+├── docs/                # arquitetura, decisões, figuras
+├── scripts/             # amostragem, modelagem e verificação
 └── tests_unit/          # pytest
 ```
 
