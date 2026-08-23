@@ -164,6 +164,17 @@ class RawEvidence(BaseModel):
         default_factory=dict,
         description="URL -> bytes do PDF baixado (politica/contrato em PDF). Aditivo; vazio por padrao.",
     )
+    procedencia: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Chave do artefato -> coletor que o produziu. Existe porque a cadeia FUNDE "
+            "evidencia de coletores sucessivos: a camada seguinte completa o que "
+            "faltava e vence apenas nas colisoes. O pacote deixa de ter procedencia "
+            "unica, e afirmar uma no meta.json passaria a ser falso. Chaves: "
+            "`html:<caminho>`, `pdf:<url>`, `headers:<url>`, `cookies:<fase>`, "
+            "`captura:<fase>`, `subpaginas:<categoria>`, `captura`."
+        ),
+    )
 
     @field_validator("timestamp_utc")
     @classmethod

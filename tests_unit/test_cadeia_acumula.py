@@ -23,9 +23,10 @@ from privacyscope.fetchers.fallback_chain import FallbackChain
 DOM = Domain(url="https://x.br", tld=".br", source_name="t")
 
 
-def _ev(nome: str, cookies=None) -> RawEvidence:
+def _ev(nome: str, cookies=None, paginas=None) -> RawEvidence:
     return RawEvidence(
-        domain=DOM, html_pages={"/": f"<html>{nome}</html>".encode()},
+        domain=DOM,
+        html_pages=paginas if paginas is not None else {"/": f"<html>{nome}</html>".encode()},
         cookies_by_phase={"single": cookies if cookies is not None else [{"name": "c"}]},
         headers={}, screenshot=None, phase_screenshots={}, network_log=[],
         subpage_selection={}, consent_actions=[], fetcher_name=nome,
@@ -89,14 +90,38 @@ def test_marca_diz_qual_condicao_nao_foi_satisfeita():
     assert "cookies_pre_consent_zero" in marca
 
 
-def test_segundo_com_evidencia_substitui_o_primeiro():
-    """Substituicao por EXISTENCIA: havendo evidencia nova, ela vence."""
-    a = _Falso("a", _ev("a", cookies=[]))
-    b = _Falso("b", _ev("b"))
+def test_segundo_completa_o_primeiro_e_vence_na_colisao():
+    """FUSAO, e nao substituicao: a camada seguinte completa o que faltava e vence
+    apenas onde ha colisao. Substituir por inteiro perdia trabalho ja feito — coletor
+    que obtem raiz e tres subpaginas, escala por sinal, e cuja camada seguinte devolve
+    so a raiz, terminava com uma pagina."""
+    a = _Falso("a", _ev("a", cookies=[], paginas={
+        "/": b"raiz-a", "/politica": b"politica-a", "/contato": b"contato-a"}))
+    b = _Falso("b", _ev("b", paginas={"/": b"raiz-b"}))
     cadeia, params = _cadeia(a, b)
     ev = _roda(cadeia, params)
-    assert ev.fetcher_name == "b"
+    assert set(ev.html_pages) == {"/", "/politica", "/contato"}
+    assert ev.html_pages["/"] == b"raiz-b", "o mais novo vence na colisao"
+    assert ev.html_pages["/politica"] == b"politica-a", "o que a nova nao obteve permanece"
+    assert ev.fetcher_name == "a+b"
     assert not _marca(ev), "coleta satisfatoria nao e melhor esforco"
+
+
+def test_procedencia_diz_de_qual_coletor_veio_cada_artefato():
+    """O pacote deixa de ter procedencia unica; afirma-la no meta.json seria falso."""
+    a = _Falso("a", _ev("a", cookies=[], paginas={"/": b"raiz-a", "/p": b"p-a"}))
+    b = _Falso("b", _ev("b", paginas={"/": b"raiz-b"}))
+    cadeia, params = _cadeia(a, b)
+    ev = _roda(cadeia, params)
+    assert ev.procedencia["html:/"] == "b"
+    assert ev.procedencia["html:/p"] == "a"
+
+
+def test_coleta_de_um_unico_coletor_tambem_registra_procedencia():
+    a = _Falso("a", _ev("a"))
+    cadeia, params = _cadeia(a, escalar_do_primeiro=False)
+    ev = _roda(cadeia, params)
+    assert ev.procedencia == {"html:/": "a", "cookies:single": "a"}
 
 
 def test_coletor_intermediario_que_falha_nao_apaga_o_acumulador():
@@ -115,7 +140,9 @@ def test_ultimo_com_evidencia_vence_mesmo_apos_falha_intermediaria():
     b = _Falso("b", FetchError("cai"))
     c = _Falso("c", _ev("c"))
     cadeia, params = _cadeia(a, b, c)
-    assert _roda(cadeia, params).fetcher_name == "c"
+    ev = _roda(cadeia, params)
+    assert ev.fetcher_name == "a+c", "o coletor que falhou nao entra na composicao"
+    assert ev.procedencia["html:/"] == "c"
 
 
 def test_cadeia_exaurida_com_evidencia_insatisfatoria_devolve_marcada():
@@ -128,8 +155,10 @@ def test_cadeia_exaurida_com_evidencia_insatisfatoria_devolve_marcada():
         {"name": "b", "params": {}, "escalate_if": [{"signal": "cookies_pre_consent_zero"}]},
     ], "max_retries_per_fetcher": 0, "abort_on": []}
     ev = _roda(cadeia, params)
-    assert ev.fetcher_name == "b"
-    assert _marca(ev)
+    assert ev.fetcher_name == "a+b"
+    assert _marca(ev), "sinal remanescente no topo da cadeia e melhor esforco"
+    assert "cookies_pre_consent_zero" in _marca(ev)[0], (
+        "a marca precisa dizer QUAL sinal continuava pedindo escalonamento")
 
 
 def test_sem_evidencia_alguma_continua_levantando():

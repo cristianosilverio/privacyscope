@@ -380,6 +380,65 @@ class FallbackChain(PageFetcher):
     # ORQUESTRAÇÃO PRINCIPAL — fetch()
     # ------------------------------------------------------------------
     @staticmethod
+    def _procedencia_de(evidence: RawEvidence, fetcher: str) -> dict[str, str]:
+        """Mapa artefato -> coletor para UMA evidencia."""
+        p: dict[str, str] = {}
+        for k in (evidence.html_pages or {}):
+            p[f"html:{k}"] = fetcher
+        for u in (evidence.pdf_documents or {}):
+            p[f"pdf:{u}"] = fetcher
+        for u in (evidence.headers or {}):
+            p[f"headers:{u}"] = fetcher
+        for fase in (evidence.cookies_by_phase or {}):
+            p[f"cookies:{fase}"] = fetcher
+        for fase in (evidence.phase_screenshots or {}):
+            p[f"captura:{fase}"] = fetcher
+        for cat in (evidence.subpage_selection or {}):
+            p[f"subpaginas:{cat}"] = fetcher
+        if evidence.screenshot is not None:
+            p["captura"] = fetcher
+        return p
+
+    @classmethod
+    def _funde(cls, anterior: RawEvidence | None, nova: RawEvidence,
+               fetcher: str) -> RawEvidence:
+        """Une a evidencia nova a acumulada. A nova vence nas COLISOES; o que ela nao
+        obteve permanece do coletor anterior.
+
+        Substituir por inteiro perdia trabalho ja feito: coletor que obtem a raiz e
+        tres subpaginas, escala por sinal, e cuja camada seguinte devolve so a raiz,
+        terminava com uma pagina. A fusao termina com quatro.
+
+        A nova NAO apaga o que nao tocou. `screenshot` e a excecao natural: e uma so,
+        e a mais recente e a que corresponde ao estado final da navegacao.
+        """
+        proc_nova = cls._procedencia_de(nova, fetcher)
+        if anterior is None:
+            return nova.model_copy(update={"procedencia": proc_nova})
+
+        def une(a: dict | None, b: dict | None) -> dict:
+            return {**(a or {}), **(b or {})}
+
+        nomes = [n for n in anterior.fetcher_name.split("+") if n]
+        if fetcher not in nomes:
+            nomes.append(fetcher)
+
+        return nova.model_copy(update={
+            "html_pages": une(anterior.html_pages, nova.html_pages),
+            "headers": une(anterior.headers, nova.headers),
+            "pdf_documents": une(anterior.pdf_documents, nova.pdf_documents),
+            "cookies_by_phase": une(anterior.cookies_by_phase, nova.cookies_by_phase),
+            "phase_screenshots": une(anterior.phase_screenshots, nova.phase_screenshots),
+            "subpage_selection": une(anterior.subpage_selection, nova.subpage_selection),
+            "network_log": list(anterior.network_log or []) + list(nova.network_log or []),
+            "consent_actions": list(anterior.consent_actions or []) + list(nova.consent_actions or []),
+            "errors": list(anterior.errors or []) + list(nova.errors or []),
+            "screenshot": nova.screenshot if nova.screenshot is not None else anterior.screenshot,
+            "fetcher_name": "+".join(nomes),
+            "procedencia": une(anterior.procedencia, proc_nova),
+        })
+
+    @staticmethod
     def _enrich_with_tls(evidence: RawEvidence) -> RawEvidence:
         """Registra o certificado apresentado, seja qual for o coletor que venceu.
 
@@ -509,14 +568,19 @@ class FallbackChain(PageFetcher):
                 )
                 if not should_escalate:
                     chain_audit.append(f"chain.success[{i}] fetcher={fname}")
+                    evidence = self._funde(melhor_evidencia, evidence, fname)
+                    if melhor_evidencia is not None:
+                        chain_audit.append(
+                            f"chain.fusao coletores={evidence.fetcher_name} "
+                            f"artefatos={len(evidence.procedencia)}")
                     evidence = await self._enrich_with_pdfs(evidence, chain_audit)
                     evidence = self._enrich_with_tls(evidence)
                     return self._enrich_with_audit(evidence, chain_audit)
                 chain_audit.append(
                     f"chain.escalate[{i}->{i+1}] from={fname} reason={escalate_reason}"
                 )
-                melhor_evidencia = evidence
-                melhor_fetcher = fname
+                melhor_evidencia = self._funde(melhor_evidencia, evidence, fname)
+                melhor_fetcher = melhor_evidencia.fetcher_name
                 melhor_motivo = escalate_reason
                 last_exception = None
                 continue

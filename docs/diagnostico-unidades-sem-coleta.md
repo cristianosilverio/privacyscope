@@ -25,13 +25,13 @@ a verificação humana identifica, e é esse o registro que este documento prese
 
 | estado | n | quem responde |
 |---|---:|---|
-| coletado (após as correções) | 6 | — |
+| coletado (após as correções) | 7 | — |
 | `unidade_inexistente` | 5 | quadro amostral |
 | `nao_coletado`, defeito de quadro não detectável | 5 | quadro amostral |
-| `nao_coletado`, falha real do sítio | 3 | o sítio |
+| `nao_coletado`, falha real do sítio | 2 | o sítio |
 | `nao_coletado`, `robots.txt` proíbe | 1 | decisão do controlador |
 
-**Taxa de alcance: 0% → 40%** (6 de 15, excluídas do denominador as cinco unidades
+**Taxa de alcance: 0% → 46,7%** (7 de 15, excluídas do denominador as cinco unidades
 inexistentes — endereço que não designa hospedeiro não é sítio não alcançado).
 
 O quadro amostral responde por **10 das 20**. O arcabouço prova 5; as outras 5 são
@@ -39,11 +39,13 @@ indistinguíveis, para o instrumento, de indisponibilidade.
 
 ---
 
-## 3. As seis recuperadas
+## 3. As sete recuperadas
 
-Recuperadas por duas correções que só funcionam em conjunto: a queda para a variante
-`www.` no coletor por requisição simples, e o acumulador de evidência da cadeia, que
-deixou de descartar coleta bem-sucedida quando o coletor seguinte falha.
+Recuperadas por correções que só funcionam em conjunto: a queda para a variante
+`www.` no coletor por requisição simples, e a **fusão de evidência** na cadeia, que
+deixou de descartar coleta bem-sucedida quando o coletor seguinte falha. A fusão une
+o que cada camada obteve, com a mais recente vencendo apenas nas colisões, e cada
+artefato passa a registrar o coletor que o produziu.
 
 | domínio | política | caminho |
 |---|---|---|
@@ -53,12 +55,17 @@ deixou de descartar coleta bem-sucedida quando o coletor seguinte falha.
 | `kroton.com.br` | sim | ápex → 301 → `ri-cogna2025.mz-sites.com` |
 | `novajus.com.br` | não | `www.novajus.com.br` |
 | `wurthdobrasil.com.br` | não | `www.wurthdobrasil.com.br` |
+| `uems.br` | sim | `www.uems.br`, com certificado registrado e coleta mantida |
 
-**Todas as seis escalaram por `cookies_pre_consent_zero`.** Zero cookie antes do
-consentimento é o comportamento correto de quem não rastreia sem base legal. O
-arcabouço tratava isso como sinal de coleta insuficiente, escalava, o segundo coletor
-falhava, e a unidade se perdia — de modo que o instrumento penalizava sistematicamente
-o sítio conforme. O gatilho permanece em aberto (H3).
+**Seis das sete escalaram por `cookies_pre_consent_zero`**, e o sinal está correto: o
+coletor por requisição simples só enxerga `Set-Cookie` de cabeçalho HTTP, de modo que
+cookie posto por JavaScript — o caso de praticamente todo gerenciador de consentimento
+— não aparece. Zero cookie ali não indica sítio que não rastreia; indica **camada não
+observada**, que é exatamente o que o escalonamento serve para resolver.
+
+Hipótese descartada: cheguei a ler o sinal como penalização do sítio conforme. Era
+leitura errada — o sinal mede completude da coleta, e não o fenômeno. O defeito estava
+apenas no descarte da evidência quando a camada seguinte falhava.
 
 `kroton.com.br` foi coletado com marca de degradação numa execução e sem marca em
 outra, 45 minutos depois. Instabilidade do instrumento, na mesma linha do caso
@@ -88,7 +95,7 @@ verificação humana localizou o endereço real.
 
 | domínio | sintoma no coletor | onde responde |
 |---|---|---|
-| `acessorh.com.br` | `CERTIFICATE_VERIFY_FAILED: Hostname mismatch` | `acesserh.com.br` — grafia distinta, certificado válido |
+| `acessorh.com.br` | certificado de `api.people.unico.app`; a coleta falha depois, no destino do redirecionamento | `acesserh.com.br` — grafia distinta, certificado válido. **O achado do certificado é registrado mesmo com a unidade perdida** |
 | `sgisistemas.com.br` | `ConnectTimeout` no ápex e no `www.` | `smart.sgisistemas.com.br` |
 | `online.net.br` | `ConnectTimeout` no ápex e no `www.` | `velocidade.online.net.br` |
 | `fulltrack.net.br` | ápex sem conexão; `www.` é NXDOMAIN | `fulltrack-tools.ftdata.com.br` — outro domínio |
@@ -100,17 +107,20 @@ ela já está implementada.
 
 ---
 
-## 6. Falha real do sítio — 3
+## 6. Falha real do sítio — 2
 
 | domínio | causa técnica | verificação |
 |---|---|---|
-| `uems.br` | `www.uems.br` com `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` | cadeia de certificação incompleta; o Chromium confirma por outra via, com `chrome-error://chromewebdata/` |
 | `bitcom.psi.br` | `www.bitcom.psi.br` encerra a conexão durante o *handshake*: `UNEXPECTED_EOF_WHILE_READING` | falha com e sem validação de certificado |
 | `meucurriculoperfeito.com.br` | aceita TCP e não responde em HTTPS; `ERR_HTTP2_PROTOCOL_ERROR` no Chromium | mesmo comportamento no `www.` e em duas redes |
 
-Os dois primeiros são **certificado inválido**, o que ultrapassa falha de coleta:
-transporte sem proteção adequada é matéria do art. 46 da Lei 13.709/2018. Registrar
-apenas "não coletado" descartaria uma observação sobre o controlador.
+`uems.br` estava neste grupo e **saiu**: desde 17/08/2026 o coletor registra o
+certificado defeituoso e prossegue, em vez de desistir. Sai com
+`tls_estado=cadeia_ou_validade`, `*.uems.br`, GlobalSign — a cadeia de certificação é
+incompleta, e isso é observação sobre o controlador, não motivo para perder a unidade.
+
+Certificado inválido ultrapassa falha de coleta: transporte sem proteção adequada é
+matéria do art. 46 da Lei 13.709/2018.
 
 ---
 
