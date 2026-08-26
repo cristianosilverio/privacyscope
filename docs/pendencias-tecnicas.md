@@ -1,19 +1,29 @@
-# Pendências de docstring descobertas na revisão do TCC
+# Pendências técnicas
 
 **Status:** aberto — nada foi alterado no código.
 **Origem:** revisão do texto do TCC (agosto/2026). Ao conferir afirmações do
-documento contra a implementação, apareceram docstrings desatualizados ou
-incompletos. Registrados aqui para tratamento posterior.
+documento contra a implementação, apareceram divergências entre o que o código
+faz e o que se afirma dele, em docstring, em documentação ou em teste. Registradas
+aqui para tratamento posterior.
+
+O arquivo nasceu como fila de pendências de docstring e passou a reunir também
+código morto, dependência de ordem não declarada e comportamento que contraria
+doutrina do próprio projeto. O nome acompanhou o escopo.
 
 **Prioridade atual: finalizar o documento do TCC.** Não alterar código enquanto
 essa meta não for concluída. Este arquivo é a fila de trabalho para depois.
 
 ## Como usar este arquivo
 
-Cada item traz: arquivo e símbolo, o que o docstring afirma hoje, o que o código
-faz de fato, e o que precisa mudar. Ao corrigir um item, marque `[x]` e registre
-a data. Ao descobrir um novo item durante a revisão do TCC, acrescente na mesma
-estrutura, sem alterar o código no momento da descoberta.
+Cada item traz: arquivo e símbolo, o que se afirma hoje, o que o código faz de
+fato, e o que precisa mudar. Ao corrigir um item, marque `[x]` e registre a data.
+Ao descobrir um novo item durante a revisão do TCC, acrescente na mesma estrutura,
+sem alterar o código no momento da descoberta.
+
+**Declare a direção do conserto.** Nem todo item se resolve corrigindo o texto: há
+casos em que o docstring está certo e o código é que erra. Quando for esse o caso,
+diga-o na primeira linha do item, sob pena de alguém pacificar a divergência no
+sentido errado e enterrar o defeito com aparência de resolvido.
 
 Regra que motivou este arquivo: **conclusões sobre o comportamento do framework
 devem ser tiradas do código, não do docstring.** Os docstrings deste projeto são
@@ -107,6 +117,53 @@ que só faz sentido em cadeias com dois fetchers capazes de interagir com banner
 Não deixar como está sem nota, porque induz leitor a crer que a interação com
 banner participa da decisão de escalonamento — foi exatamente o erro que entrou
 no texto do TCC e precisou ser corrigido.
+
+---
+
+## [ ] 5. `tests/ml_texto.py` — ramo sem segmentos devolve `False` onde a doutrina manda estado indeterminado
+
+**ATENÇÃO: o comentário está CORRETO e o código está errado.** Não resolver este
+item alinhando o comentário ao código.
+
+**O que o comentário afirma**, imediatamente acima da linha: "Ausencia de conteudo
+avaliavel NAO e ausencia de divulgacao."
+
+**O que o código faz.** `return self._resultado(evidence, False, 0.0, ...)`.
+Devolve ausência de divulgação, para os dois motivos possíveis do ramo,
+`sem_texto_avaliavel` e `politica_outro_idioma`.
+
+**O que o `orchestrator.py` declara**, no docstring da resolução de dependências:
+o resultado sai "com valor `nao_aplicavel` — nunca `false`, que confundiria 'não
+divulgou' com 'não foi medido' e enviesaria o indicador na direção que mais
+importa". O ramo sem segmentos não passa pelo orquestrador e escapa da regra.
+
+**O comportamento está fixado por teste.** `test_documento_sem_texto_nao_e_ausencia_de_divulgacao`
+afirma no nome o contrário do que assere no corpo, onde exige `r.value is False`;
+`test_politica_so_em_outro_idioma_recebe_motivo_proprio` afere motivo, e não
+estado. Corrigir o código quebra os dois, e os nomes precisam ser reescritos junto.
+Foi a leitura apressada do segundo nome que produziu, no texto do TCC, a afirmação
+de que o sítio recebia estado próprio, corrigida em 23/08/2026.
+
+**O que precisa mudar.** Separar os dois motivos, que hoje compartilham o mesmo
+retorno:
+
+- `sem_texto_avaliavel` para `nao_coletado`: o instrumento não obteve o objeto da
+  medição, ainda que o detector de política tenha encontrado a política. É
+  coerente com `tem_politica_privacidade = true` no mesmo sítio, porque achar a
+  política e extrair texto dela são coisas distintas.
+- `politica_outro_idioma` para `nao_aplicavel`: o documento existe, foi obtido e é
+  legível; o que não se verifica é a precondição de ser declaração endereçada ao
+  titular em português.
+
+Avaliar antes o efeito sobre `outputs/renderizadores.py::_prioridade`, que manda o
+não coletado para o fim da fila de triagem. Sob `nao_coletado`, os sítios afetados
+saem da fila de inspeção e entram na de recoleta, o que parece o destino certo,
+mas é mudança de comportamento na saída e não apenas de rótulo.
+
+**Magnitude.** Coleta definitiva, execução `0d425930`: `politica_outro_idioma` não
+ocorre nenhuma vez; `sem_texto_avaliavel` alcança dois sítios, o que dá seis
+medições entre as três variáveis textuais. Nenhum resultado reportado no TCC
+depende disso, porque as variáveis textuais não são reportadas por sítio.
 
 ---
 
